@@ -99,6 +99,7 @@ def summary_for_day(
     model: Callable[[], Model],
     progress: Callable[[str], None],
     now: datetime | None = None,
+    force: bool = False,
 ) -> Summary:
     """The day's summary, asking the model only for what it has not judged.
 
@@ -106,7 +107,9 @@ def summary_for_day(
     knows which articles it already accounted for, so a later run pays only
     for what appeared since, handing the previous summary back as context.
     """
-    stored = read_summary(connection, day)
+    stored = None if force else read_summary(connection, day)
+    if force:
+        progress("--force: se rehace el día ignorando la caché")
     if stored is not None and stored.input_hash != input_hash(stored.covered_ids):
         # The instructions or the model moved. What they produced is stale, so
         # it is dropped here and the day is summarised from scratch below.
@@ -146,6 +149,7 @@ def run(
     model: Callable[[], Model],
     progress: Callable[[str], None],
     now: datetime | None = None,
+    force: bool = False,
 ) -> str:
     """Everything a run does, minus the printing.
 
@@ -163,5 +167,7 @@ def run(
         # Nothing to summarise is an answer, and it costs no API call.
         return top
 
-    body = render(summary_for_day(connection, day, articles, model, progress, now))
+    body = render(
+        summary_for_day(connection, day, articles, model, progress, now, force)
+    )
     return f"{top}\n\n{body}" if body else top

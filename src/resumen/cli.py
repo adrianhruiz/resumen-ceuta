@@ -38,7 +38,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
 
 def main(argv: Sequence[str] | None = None) -> int:
     """Run the pipeline. Returns the process exit code."""
-    parse_args(argv)
+    args = parse_args(argv)
     try:
         key = load_api_key(warn=progress)
     except ConfigError as error:
@@ -47,7 +47,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     # Opening the database creates it and applies the schema, on every run.
     connection = connect()
     try:
-        print(run(connection, sources(), lambda: Gemini(key), progress))
+        print(
+            run(connection, sources(), lambda: Gemini(key), progress, force=args.force)
+        )
     except (TransportError, InvalidPayload) as error:
         # Nothing was written, so the next run retries from a clean slate.
         print(error, file=sys.stderr)

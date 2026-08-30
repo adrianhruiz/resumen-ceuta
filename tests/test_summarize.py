@@ -152,3 +152,35 @@ def test_the_summary_is_checked_against_what_was_sent() -> None:
     )
     with pytest.raises(InvalidPayload):
         summarise(articles, Scripted(invented))
+
+
+def test_an_empty_day_costs_nothing_even_with_force(
+    database: sqlite3.Connection,
+) -> None:
+    # --force is about distrusting a stored summary, not about conjuring one:
+    # with no articles there is nothing to ask about.
+    model = Scripted(AssertionError("no debería llamarse"))
+    output = run(database, (), model, silent, NOON, force=True)
+    assert model.calls == 0
+    assert "sin noticias" in output
+
+
+def test_the_cli_passes_force_through(
+    database: sqlite3.Connection,
+    served_feeds: tuple[Source, ...],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from resumen import cli
+
+    seen: list[bool] = []
+
+    def spy(connection, sources, model, progress, force=False):  # noqa: ANN001, ANN202
+        seen.append(force)
+        return "listo"
+
+    monkeypatch.setattr(cli, "run", spy)
+    monkeypatch.setattr(cli, "connect", lambda: database)
+    monkeypatch.setattr(cli, "load_api_key", lambda warn: "clave")
+    assert cli.main([]) == 0
+    assert cli.main(["--force"]) == 0
+    assert seen == [False, True]

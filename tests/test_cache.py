@@ -210,3 +210,51 @@ def test_a_failed_call_leaves_the_previous_summary_alone(
     with pytest.raises(Exception, match="intentos"):
         summary_for_day(database, DAY, articles(20), Dead(), silent, NOON)
     assert read_summary(database, DAY) == before
+
+
+# --- the shortcuts, and the way past them --------------------------------
+
+
+def test_force_asks_again_even_with_nothing_new(database: sqlite3.Connection) -> None:
+    model = Counting()
+    summarise(database, model, articles(10))
+    summary_for_day(database, DAY, articles(10), model, silent, NOON, force=True)
+    assert model.calls == 2
+
+
+def test_force_redoes_the_day_from_scratch(database: sqlite3.Connection) -> None:
+    # Not an extension of what is stored: --force exists for when the stored
+    # summary is the thing you distrust.
+    model = Counting()
+    summarise(database, model, articles(10))
+    summary_for_day(database, DAY, articles(20), model, silent, NOON, force=True)
+    assert "RESUMEN QUE YA EXISTE" not in model.prompts[1]
+    assert '"faro:0"' in model.prompts[1]
+
+
+def test_force_replaces_what_was_stored(database: sqlite3.Connection) -> None:
+    model = Counting()
+    summarise(database, model, articles(10))
+    summary_for_day(database, DAY, articles(20), model, silent, NOON, force=True)
+
+    stored = read_summary(database, DAY)
+    assert stored is not None
+    assert len(stored.covered_ids) == 20
+    assert database.execute("SELECT COUNT(*) FROM summaries").fetchone()[0] == 1
+
+
+def test_force_says_what_it_is_doing(database: sqlite3.Connection) -> None:
+    said: list[str] = []
+    summary_for_day(
+        database, DAY, articles(3), Counting(), said.append, NOON, force=True
+    )
+    assert any("--force" in line for line in said)
+
+
+def test_a_covered_day_is_rendered_without_asking(database: sqlite3.Connection) -> None:
+    model = Counting()
+    summarise(database, model, articles(10))
+    said: list[str] = []
+    summary_for_day(database, DAY, articles(10), model, said.append, NOON)
+    assert model.calls == 1
+    assert any("sin llamar al modelo" in line for line in said)
