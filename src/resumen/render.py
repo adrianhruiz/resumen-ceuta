@@ -86,19 +86,20 @@ def coverage(fetches: Sequence[Fetch]) -> str:
     # Archives first, then sliding windows: the reader gets the trustworthy
     # half of the coverage before the caveat.
     for source in sorted(SOURCES, key=lambda s: not s.archive):
-        reads = [fetch for fetch in by_source.get(source.name, []) if fetch.ok]
+        attempts = by_source.get(source.name, [])
+        reads = [attempt for attempt in attempts if attempt.ok]
         if not reads:
-            attempted = by_source.get(source.name)
-            parts.append(
-                f"{source.display}: {'no se pudo leer' if attempted else 'sin leer'}"
-            )
+            state = "no se pudo leer" if attempts else "sin leer"
         elif source.archive:
-            parts.append(
-                f"{source.display}: completo hasta {local_time(reads[-1].fetched_at)}"
-            )
+            state = f"completo hasta {local_time(reads[-1].fetched_at)}"
         else:
             plural = "lectura" if len(reads) == 1 else "lecturas"
-            parts.append(f"{source.display}: {len(reads)} {plural} (parcial)")
+            state = f"{len(reads)} {plural} (parcial)"
+        # A read that worked this morning is still coverage, but the reader
+        # deserves to know the source has stopped answering since.
+        if reads and not attempts[-1].ok:
+            state += ", ahora caído"
+        parts.append(f"{source.display}: {state}")
     return " · ".join(parts)
 
 

@@ -83,7 +83,7 @@ def test_the_failure_is_reported_to_the_reader(
         said.append,
         NOON,
     )
-    assert any("faro" in line and "no se pudo leer" in line for line in said)
+    assert any("Faro" in line and "no se pudo leer" in line for line in said)
 
 
 def test_a_run_reports_the_day_it_ingested(

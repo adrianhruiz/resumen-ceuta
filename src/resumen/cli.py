@@ -13,7 +13,7 @@ from .config import ConfigError, load_api_key
 from .feeds import sources
 from .gemini import Gemini, TransportError
 from .payload import InvalidPayload
-from .pipeline import run
+from .pipeline import NothingToShow, run
 from .store import connect
 
 
@@ -50,7 +50,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(
             run(connection, sources(), lambda: Gemini(key), progress, force=args.force)
         )
-    except (TransportError, InvalidPayload) as error:
+    except (TransportError, InvalidPayload, NothingToShow) as error:
         # Nothing was written, so the next run retries from a clean slate.
         print(error, file=sys.stderr)
         return 1
