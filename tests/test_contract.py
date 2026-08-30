@@ -6,13 +6,17 @@ They hit real servers, so they are marked `network` and stay out of the gate
 that protects `develop`.
 """
 
+import os
 import urllib.error
 import urllib.request
 
 import feedparser
 import pytest
 
+from resumen.config import ConfigError, load_api_key
 from resumen.feeds import SOURCES, fetch, parse
+from resumen.gemini import MODEL, TOPICS, Gemini, ask
+from resumen.store import Article
 
 FARO, PUEBLO = SOURCES
 
@@ -72,3 +76,49 @@ def test_the_pueblo_wordpress_path_is_still_a_404() -> None:
 def test_the_feeds_parse_without_errors() -> None:
     for source in SOURCES:
         assert not feedparser.parse(fetch(source)).bozo
+
+
+def api_key() -> str:
+    """The key from the environment in CI, or from the user's file locally."""
+    from_environment = os.environ.get("GEMINI_API_KEY")
+    if from_environment:
+        return from_environment
+    try:
+        return load_api_key()
+    except ConfigError:
+        pytest.skip("sin API key: exporta GEMINI_API_KEY o crea el fichero de config")
+
+
+def test_the_pinned_model_still_answers_a_usable_summary() -> None:
+    # Two articles about the same fact, one per outlet. If the pinned model
+    # disappears, stops returning JSON, or stops honouring the taxonomy, this
+    # is where it shows up, not in production.
+    articles = [
+        Article(
+            "faro",
+            "1",
+            "g1",
+            "El PP denuncia que el Gobierno sigue fallando a Ceuta",
+            "El partido critica la inacción del Ejecutivo central.",
+            None,
+            "https://elfarodeceuta.es/x/",
+            "2026-08-30T10:58:34+00:00",
+            "2026-08-30",
+        ),
+        Article(
+            "pueblo",
+            "2",
+            "g2",
+            "El PP carga contra el Gobierno un mes después del 30J",
+            "Los populares reprochan al Ejecutivo su gestión.",
+            None,
+            "https://www.elpueblodeceuta.es/y/",
+            "2026-08-30T11:02:00+00:00",
+            "2026-08-30",
+        ),
+    ]
+    payload = ask(Gemini(api_key(), MODEL), articles)
+
+    assert all(theme["tema"] in TOPICS for theme in payload["temas"])
+    returned = {i for t in payload["temas"] for e in t["entradas"] for i in e["ids"]}
+    assert returned | set(payload["descartados"]) == {"faro:1", "pueblo:2"}

@@ -179,7 +179,10 @@ día con cero artículos → `Sin noticias`; día ya cubierto → render directo
 ### Llamada a Gemini
 
 Una por ejecución como máximo, `temperature=0`, tope de **3 intentos** con
-backoff exponencial. Recibe el `payload` actual como contexto y solo los
+backoff exponencial (1 s y 2 s), timeout de 90 s y **el reintento automático
+del SDK desactivado**: si google-genai reintenta por debajo, la política de
+tres intentos es decorativa y un modelo caído se convierte en un cuelgue de
+minutos en vez de un error. Medido el 2026-08-30. Recibe el `payload` actual como contexto y solo los
 artículos de `ids - covered_ids`, con **título + `description`**: la
 entradilla del RSS ya trae el qué-quién-dónde, que es todo lo que necesita una
 línea de resumen. El `body` se guarda pero no se envía.
@@ -497,6 +500,7 @@ local y cliente falso:
 |---|---|---|
 | **Llamadas a la API por ejecución** | **≤ 1**, y 0 con caché caliente | Contador del cliente falso. Es el presupuesto que importa |
 | Ejecución completa con caché caliente | < 1,5 s | `perf_counter`, feeds en local |
+| Ejecución con llamada al modelo | < 90 s, y ~30 s es lo normal | Medido: 29,3 s con 34 artículos el 2026-08-30 |
 | Arranque hasta primera salida | < 400 ms | Sin red; mide importar y abrir la BD |
 | Prompt de un día completo (~35 noticias) | ≤ 6.000 tokens | Conteo con el tokenizador; la estimación previa era ~4k |
 | Ingesta de los 136 items de El Pueblo | < 2 s | BD en `tmp_path` |
@@ -637,9 +641,18 @@ Desarrollo: `pytest` y `pytest-httpserver` para los tests, `ruff` para lint
 y formato con las reglas `S` (bandit) activadas, `uv` para el entorno y el
 empaquetado.
 
-El identificador exacto del modelo Flash se fija explícitamente en
-configuración, no se deja implícito, porque entra en el `input_hash`. La
-versión concreta se comprueba contra la API al escribir el código.
+El identificador del modelo se fija explícitamente porque entra en el
+`input_hash`: un alias como `gemini-flash-latest` cambiaría las respuestas sin
+cambiar el hash que debería seguirlas.
+
+Comprobado contra la API el 2026-08-30: **`gemini-3.6-flash`**. Se descartó
+`gemini-3.7-flash`, que era el más nuevo y devolvía `503 UNAVAILABLE` en todos
+los intentos, y `gemini-2.5-flash`, que aparece en el listado de modelos pero
+responde `404` para `generateContent` con esta clave.
+
+Una llamada real con los 34 artículos del 30 de agosto tardó **29,3 s** y
+devolvió 16 entradas en 6 temas con 13 descartes, sin perder ni inventar
+ningún id. De ahí sale el timeout de 90 s: tres veces el tiempo medido.
 
 ## Antes de escribir código
 
