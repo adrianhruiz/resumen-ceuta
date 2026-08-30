@@ -587,7 +587,11 @@ que sí se cubre, porque es barato: la ejecución con `TERM=dumb` y con
       control que existe.
 - [ ] Verificar en un caso real que la misma noticia en los dos medios queda
       agrupada.
-- [ ] Instalar desde cero siguiendo solo el README.
+- [x] Instalar desde cero siguiendo solo el README. Verificado el 2026-08-30 en
+      un entorno aislado: clone, `uv tool install --editable .`, fichero de
+      clave y una ejecución real de 36,4 s sobre una base vacía. El `git clone`
+      por HTTPS no se pudo probar desde ese entorno, que bloquea TLS hacia
+      GitHub; se hizo por SSH.
 - [ ] Mirar el gasto real en la consola de Google tras una semana.
 
 ### Cada test con su tarea
