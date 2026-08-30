@@ -5,6 +5,7 @@ article belongs to, computed when it is ingested, because that is the day the
 reader means when they say "hoy".
 """
 
+import json
 import sqlite3
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
@@ -80,6 +81,20 @@ INSERT_FETCH = """
 INSERT INTO fetches (source, fetched_at, ok, item_count) VALUES (?, ?, ?, ?)
 """
 
+SELECT_SUMMARY = """
+SELECT covered_ids, input_hash, payload, generated_at FROM summaries WHERE day = ?
+"""
+
+UPSERT_SUMMARY = """
+INSERT INTO summaries (day, covered_ids, input_hash, payload, generated_at)
+VALUES (?, ?, ?, ?, ?)
+ON CONFLICT(day) DO UPDATE SET
+    covered_ids = excluded.covered_ids,
+    input_hash = excluded.input_hash,
+    payload = excluded.payload,
+    generated_at = excluded.generated_at
+"""
+
 SELECT_FETCHES = """
 SELECT source, fetched_at, ok, item_count
 FROM fetches
@@ -116,6 +131,16 @@ class Fetch:
     fetched_at: str
     ok: bool
     item_count: int | None
+
+
+@dataclass(frozen=True, slots=True)
+class StoredSummary:
+    """A summary as it was left in the database."""
+
+    covered_ids: tuple[str, ...]
+    input_hash: str
+    payload: str
+    generated_at: str
 
 
 def connect(path: Path | None = None) -> sqlite3.Connection:
@@ -171,3 +196,27 @@ def fetches_between(
     """Every read attempted in that half-open interval, oldest first."""
     rows = connection.execute(SELECT_FETCHES, (start, end))
     return [Fetch(source, at, bool(ok), count) for source, at, ok, count in rows]
+
+
+def read_summary(connection: sqlite3.Connection, day: str) -> StoredSummary | None:
+    row = connection.execute(SELECT_SUMMARY, (day,)).fetchone()
+    if row is None:
+        return None
+    covered, input_hash, payload, generated_at = row
+    return StoredSummary(tuple(json.loads(covered)), input_hash, payload, generated_at)
+
+
+def write_summary(
+    connection: sqlite3.Connection,
+    day: str,
+    covered_ids: Sequence[str],
+    input_hash: str,
+    payload: str,
+    generated_at: str,
+) -> None:
+    """Replace the day's summary. Nothing partial ever gets here."""
+    with connection:
+        connection.execute(
+            UPSERT_SUMMARY,
+            (day, json.dumps(sorted(covered_ids)), input_hash, payload, generated_at),
+        )

@@ -5,6 +5,7 @@ either of them regenerates the summaries they produced. That is deliberate:
 changing the instructions has to change the output.
 """
 
+import hashlib
 import json
 import time
 from collections.abc import Callable, Sequence
@@ -42,7 +43,7 @@ PROMPT = """\
 Eres el editor de un resumen diario de la prensa local de Ceuta. Trabajas con
 lo que han publicado El Faro de Ceuta y El Pueblo de Ceuta.
 
-Tu tarea, sobre los ARTÍCULOS NUEVOS:
+Tu tarea, sobre los artículos que se te entregan al final:
 
 1. Descarta lo que no sea noticia: opinión, editoriales, columnas, crónicas,
    reportajes, entrevistas, fotogalerías y previas o resúmenes deportivos.
@@ -104,6 +105,18 @@ RESPONSE_SCHEMA: dict[str, Any] = {
     },
     "required": ["temas", "descartados"],
 }
+
+
+def input_hash(covered_ids: Sequence[str]) -> str:
+    """What a stored summary depended on: its articles, the prompt, the model.
+
+    It does not invalidate on its own — a day gains articles all the time and
+    that is handled by comparing ids. What it catches is the other kind of
+    change: editing the instructions or moving to another model has to
+    regenerate what those produced, without anyone having to remember.
+    """
+    material = json.dumps(sorted(covered_ids)) + PROMPT + MODEL
+    return hashlib.sha256(material.encode("utf-8")).hexdigest()
 
 
 class Model(Protocol):
