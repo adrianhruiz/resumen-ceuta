@@ -25,7 +25,7 @@ en [PLAN.md](PLAN.md).
 ## Instalación
 
 ```bash
-sudo pacman -S uv
+mise use -g uv@latest   # o: sudo pacman -S uv
 uv tool install --editable .
 ```
 
