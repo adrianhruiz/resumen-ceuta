@@ -232,9 +232,14 @@ Arch marca el Python del sistema como *externally managed* (PEP 668), así que
 un entorno aislado es obligatorio.
 
 ```bash
-sudo pacman -S uv
+mise use -g uv@latest            # o 'sudo pacman -S uv'
 uv tool install --editable .     # deja 'resumen' en ~/.local/bin
 ```
+
+`uv` se instaló por mise y no por pacman (2026-08-30): `sudo` no tenía terminal
+para pedir la contraseña, y mise ya estaba en uso para el resto de
+herramientas. Queda en `~/.config/mise/config.toml`, sin root y reversible con
+`mise unuse -g uv`.
 
 Con `[project.scripts] resumen = "resumen.cli:main"` en `pyproject.toml`.
 `--editable` hace que tocar el código se refleje sin reinstalar.
@@ -595,7 +600,7 @@ Comprobado en la máquina el 2026-08-30: Python 3.14.7 en `/usr/bin/python3.14`,
       diseño. Generar otra en https://aistudio.google.com/apikey
 - [ ] La nueva key va en `~/.config/resumen-ceuta/env` con permisos `600`.
       Nunca en el código ni en el repositorio.
-- [ ] `sudo pacman -S uv`.
+- [x] `uv` instalado (0.12.7, vía `mise use -g uv@latest`, 2026-08-30).
 - [x] `git init`, primer commit en `main` y rama `develop` (2026-08-30).
 - [x] Repositorio privado `adrianhruiz/resumen-ceuta` creado, `main` y
       `develop` empujadas, `develop` como rama por defecto (2026-08-30).
