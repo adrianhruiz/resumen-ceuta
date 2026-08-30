@@ -507,15 +507,25 @@ local y cliente falso:
 
 ### Rendimiento — presupuestos en números
 
-| Qué | Presupuesto | Cómo se mide |
+Todo medido el 2026-08-30. El presupuesto va varias veces por encima de lo
+medido a propósito: un fallo tiene que significar una regresión de orden de
+magnitud, no una máquina de CI ocupada.
+
+| Qué | Presupuesto | Medido |
 |---|---|---|
-| **Llamadas a la API por ejecución** | **≤ 1**, y 0 con caché caliente | Contador del cliente falso. Es el presupuesto que importa |
-| Ejecución completa con caché caliente | < 1,5 s | `perf_counter`, feeds en local |
-| Ejecución con llamada al modelo | < 90 s, y ~30 s es lo normal | Medido: 29,3 s con 34 artículos el 2026-08-30 |
-| Arranque hasta primera salida | < 400 ms | Sin red; mide importar y abrir la BD |
-| Prompt de un día completo (~35 noticias) | ≤ 6.000 tokens | Conteo con el tokenizador; la estimación previa era ~4k |
-| Ingesta de los 136 items de El Pueblo | < 2 s | BD en `tmp_path` |
-| Crecimiento de la BD | ≤ 200 KB/día con cuerpos | La estimación previa era ~150 KB, 55 MB/año |
+| **Llamadas a la API por ejecución** | **≤ 1**, y 0 con caché caliente | 1 y 0. Es el presupuesto que importa |
+| Ejecución completa con caché caliente | < 1,5 s | **0,63 s** contra los feeds reales, casi todo red |
+| Ejecución con llamada al modelo | < 90 s | **29,3 s** con 34 artículos |
+| Arranque hasta primera salida | < 400 ms | **92 ms**, lo que compra importar el SDK tarde |
+| Prompt de un día completo | ≤ 6.000 tokens | **4.250 tokens**, 14.515 caracteres |
+| Lectura y parseo de ambos feeds | < 2 s | **0,078 s** para 147 items |
+| Crecimiento de la BD | ≤ 200 KB/día con cuerpos | **164 KB** con 147 artículos |
+
+El presupuesto de tokens se comprueba **en caracteres**, para que el test sea
+determinista y no necesite red: 3,42 caracteres por token, medido contra el
+tokenizador de la API. Un test de contrato vigila que esa proporción siga
+siendo válida, porque si el tokenizador se vuelve más denso el presupuesto en
+caracteres deja de significar 6.000 tokens sin que nadie se entere.
 
 Umbrales holgados y marcados `perf`: un fallo tiene que significar regresión de
 orden de magnitud, no ruido de la máquina de CI.

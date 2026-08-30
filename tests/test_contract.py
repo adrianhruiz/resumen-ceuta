@@ -9,6 +9,7 @@ that protects `develop`.
 import os
 import urllib.error
 import urllib.request
+from pathlib import Path
 
 import feedparser
 import pytest
@@ -178,3 +179,26 @@ def test_a_rejected_key_never_appears_in_the_error() -> None:
         ask(Gemini(invented, MODEL), articles, sleep=lambda seconds: None)
     assert invented not in str(raised.value)
     assert "AIza" not in str(raised.value)
+
+
+def test_the_character_proxy_for_tokens_still_holds() -> None:
+    # The offline budget counts characters because counting tokens needs the
+    # API. This keeps that proxy honest: if the tokenizer ever gets denser,
+    # the character budget silently stops meaning 6000 tokens.
+    from google import genai
+
+    from resumen.feeds import SOURCES, parse
+    from resumen.gemini import build_prompt
+
+    fixtures = Path(__file__).parent / "fixtures" / "feeds"
+    faro, pueblo = SOURCES
+    articles = parse(faro, (fixtures / "faro-2026-08-30.xml").read_bytes())
+    articles += parse(pueblo, (fixtures / "pueblo-2026-08-30.xml").read_bytes())
+    prompt = build_prompt([a for a in articles if a.day == "2026-08-30"])
+
+    client = genai.Client(api_key=api_key())
+    tokens = client.models.count_tokens(model=MODEL, contents=prompt).total_tokens
+
+    assert tokens <= 6000
+    # Measured 3.42 characters per token on 2026-08-30.
+    assert len(prompt) / tokens >= 3.0
