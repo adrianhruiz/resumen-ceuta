@@ -281,6 +281,10 @@ No hay argumento de fecha ni subcomando `init`: el esquema se crea con
 `CREATE TABLE IF NOT EXISTS` en cada arranque. La primera ejecución crea la BD,
 trae los 36 días de El Pueblo y las 6,5 h de Faro, y ya sirve.
 
+`RESUMEN_FARO_URL` y `RESUMEN_PUEBLO_URL` apuntan la app a otro sitio: un
+servidor local en los tests, o un espejo si algún medio mueve su feed. Sin
+ellas se usan las URL reales.
+
 Rutas fijas, independientes del directorio desde el que se lance:
 
 - BD: `~/.local/share/resumen-ceuta/db.sqlite3`

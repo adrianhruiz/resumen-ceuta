@@ -5,8 +5,13 @@ from collections.abc import Callable, Iterator
 from pathlib import Path
 
 import pytest
+from pytest_httpserver import HTTPServer
 
+from resumen.feeds import SOURCES, Source
 from resumen.store import Article
+
+FIXTURES = Path(__file__).parent / "fixtures" / "feeds"
+RECORDED = ("faro-2026-08-30.xml", "pueblo-2026-08-30.xml")
 
 VALID_KEY = "clave-de-prueba"
 
@@ -60,3 +65,30 @@ def article() -> Callable[..., Article]:
         return Article(**(defaults | overrides))  # type: ignore[arg-type]
 
     return build
+
+
+@pytest.fixture
+def served_feeds(httpserver: HTTPServer) -> tuple[Source, ...]:
+    """Both feeds, served from a local HTTP server out of the recorded XML."""
+    served = []
+    for source, name in zip(SOURCES, RECORDED, strict=True):
+        path = f"/{source.name}"
+        httpserver.expect_request(path).respond_with_data(
+            (FIXTURES / name).read_bytes(), content_type="application/rss+xml"
+        )
+        served.append(Source(source.name, httpserver.url_for(path), source.id_pattern))
+    return tuple(served)
+
+
+@pytest.fixture
+def served_env(
+    served_feeds: tuple[Source, ...], monkeypatch: pytest.MonkeyPatch
+) -> tuple[Source, ...]:
+    """The same, but through the environment, so a child process finds them.
+
+    Without this a subprocess test would reach the real feeds, which is
+    exactly what the network marker exists to keep out of the gate.
+    """
+    for source in served_feeds:
+        monkeypatch.setenv(f"RESUMEN_{source.name.upper()}_URL", source.url)
+    return served_feeds

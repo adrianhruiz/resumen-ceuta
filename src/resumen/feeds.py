@@ -6,9 +6,10 @@ excerpt. Everything that differs lives in `Source`, and the parsing below is
 written once.
 """
 
+import os
 import re
 import urllib.request
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
 from html.parser import HTMLParser
@@ -53,6 +54,20 @@ SOURCES: tuple[Source, ...] = (
         "pueblo", "https://www.elpueblodeceuta.es/rss/", re.compile(r"_\d+_(\d+)\.html")
     ),
 )
+
+
+def sources() -> tuple[Source, ...]:
+    """The two feeds, with their URLs overridable through the environment.
+
+    RESUMEN_FARO_URL and RESUMEN_PUEBLO_URL point the app somewhere else: a
+    local server in the tests, a mirror if an outlet ever moves its feed.
+    """
+    return tuple(
+        replace(
+            source, url=os.environ.get(f"RESUMEN_{source.name.upper()}_URL", source.url)
+        )
+        for source in SOURCES
+    )
 
 
 class _Text(HTMLParser):
@@ -113,10 +128,12 @@ def external_id(source: Source, guid: str) -> str | None:
 def fetch(source: Source) -> bytes:
     """Read the feed as bytes, so the parser sees exactly what was served."""
     # S310 warns that urllib will happily open file: or custom schemes. The
-    # guard above is the answer to that, so the rule is silenced here and only
-    # here, on a URL that has just been checked.
-    if not source.url.startswith("https://"):
-        raise ValueError(f"feed URL must be https: {source.url}")
+    # guard below is the answer to that, so the rule is silenced here and only
+    # here, on a URL that has just been checked. Plain http is allowed because
+    # a local test server speaks it; that the real feeds are https is a
+    # separate invariant, asserted against SOURCES in the tests.
+    if not source.url.startswith(("https://", "http://")):
+        raise ValueError(f"feed URL must be http(s): {source.url}")
     request = urllib.request.Request(source.url, headers={"User-Agent": USER_AGENT})  # noqa: S310
     with urllib.request.urlopen(request, timeout=TIMEOUT_SECONDS) as response:  # noqa: S310
         return response.read()

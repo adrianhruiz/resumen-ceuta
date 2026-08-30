@@ -3,12 +3,12 @@
 from pathlib import Path
 
 import pytest
-from pytest_httpserver import HTTPServer
 
 from resumen.feeds import (
     SOURCES,
     Source,
     external_id,
+    fetch,
     html_to_text,
     local_day,
     parse,
@@ -192,11 +192,9 @@ def test_an_empty_feed_yields_nothing() -> None:
 # --- fetching over HTTP --------------------------------------------------
 
 
-def test_the_feed_is_read_over_https(httpserver: HTTPServer) -> None:
-    # The real thing is HTTPS-only; the guard is what makes that a rule and
-    # not a habit, so a plain-HTTP source must be refused outright.
-    source = Source("local", httpserver.url_for("/feed"), FARO.id_pattern)
-    with pytest.raises(ValueError, match="https"):
-        from resumen.feeds import fetch
-
+def test_a_non_http_scheme_is_refused() -> None:
+    # Plain http is allowed so a local server can stand in for a feed, but
+    # file: and friends are what the urllib audit rule is actually about.
+    source = Source("local", "file:///etc/passwd", FARO.id_pattern)
+    with pytest.raises(ValueError, match="http"):
         fetch(source)
