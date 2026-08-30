@@ -1,5 +1,6 @@
 """Fixtures that move the app's fixed paths into a temporary directory."""
 
+import json
 import stat
 from collections.abc import Callable, Iterator
 from pathlib import Path
@@ -16,6 +17,8 @@ FIXTURES = Path(__file__).parent / "fixtures" / "feeds"
 RECORDED = ("faro-2026-08-30.xml", "pueblo-2026-08-30.xml")
 
 VALID_KEY = "clave-de-prueba"
+PREVIOUS_MARKER = "RESUMEN QUE YA EXISTE"
+ARTICLES_MARKER = "ARTÍCULOS NUEVOS:"
 
 
 @pytest.fixture(autouse=True)
@@ -135,3 +138,47 @@ def empty_env(httpserver: HTTPServer, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv(
             f"RESUMEN_{source.name.upper()}_URL", httpserver.url_for(path)
         )
+
+
+class FakeModel:
+    """A model that answers about whatever it is handed, and counts the asking.
+
+    It behaves like the real one in the way that matters to the cache: when a
+    previous summary comes as context, its ids are carried into the answer, so
+    the reply still accounts for everything it is accountable for.
+    """
+
+    def __init__(self) -> None:
+        self.calls = 0
+        self.prompts: list[str] = []
+
+    def __call__(self) -> FakeModel:
+        """Usable as the model factory the pipeline expects."""
+        return self
+
+    def generate(self, prompt: str) -> str:
+        self.calls += 1
+        self.prompts.append(prompt)
+        sent = [line.split('"')[3] for line in prompt.splitlines() if '"id"' in line]
+        carried: list[str] = []
+        if PREVIOUS_MARKER in prompt:
+            block = prompt.split(PREVIOUS_MARKER)[1].rsplit(ARTICLES_MARKER, 1)[0]
+            previous = json.loads(block[block.index("{") : block.rindex("}") + 1])
+            carried = [
+                i
+                for topic in previous["temas"]
+                for e in topic["entradas"]
+                for i in e["ids"]
+            ]
+            carried += previous["descartados"]
+        kept = {
+            "tema": "Sucesos",
+            "entradas": [{"texto": "algo pasó", "ids": sent[:1]}],
+        }
+        discarded = sorted({*carried, *sent[1:]} - set(sent[:1]))
+        return json.dumps({"temas": [kept], "descartados": discarded})
+
+
+@pytest.fixture
+def fake_model() -> FakeModel:
+    return FakeModel()

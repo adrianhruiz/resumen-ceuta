@@ -19,6 +19,10 @@ from .store import (
     write_summary,
 )
 
+# Below this, a day is too thin to be worth reading on its own and yesterday
+# is printed underneath it. Five is a judgement call, not a measurement.
+THIN_DAY = 5
+
 MONTHS = (
     "enero",
     "febrero",
@@ -53,6 +57,10 @@ def day_bounds(day: str) -> tuple[str, str]:
         (start + timedelta(days=1)).date(), datetime.min.time(), MADRID
     )
     return start.astimezone(UTC).isoformat(), end.astimezone(UTC).isoformat()
+
+
+def previous_day(day: str) -> str:
+    return (date.fromisoformat(day) - timedelta(days=1)).isoformat()
 
 
 def spanish_date(day: str) -> str:
@@ -163,11 +171,29 @@ def run(
     top = header(
         spanish_date(day), len(articles), fetches_between(connection, start, end)
     )
-    if not articles:
-        # Nothing to summarise is an answer, and it costs no API call.
-        return top
+    blocks = []
+    if articles:
+        # Nothing to summarise is an answer too, and it costs no API call.
+        blocks.append(
+            render(
+                summary_for_day(connection, day, articles, model, progress, now, force)
+            )
+        )
 
-    body = render(
-        summary_for_day(connection, day, articles, model, progress, now, force)
-    )
-    return f"{top}\n\n{body}" if body else top
+    # A thin morning is not worth reading on its own, so yesterday comes along.
+    # It is its own row in `summaries`, so it costs one call the first time of
+    # the day and nothing for the rest of it.
+    if len(articles) < THIN_DAY:
+        yesterday = previous_day(day)
+        earlier = articles_for_day(connection, yesterday)
+        if earlier:
+            progress(f"hoy va flojo: se añade el {spanish_date(yesterday)}")
+            body = render(
+                summary_for_day(
+                    connection, yesterday, earlier, model, progress, now, force
+                )
+            )
+            if body:
+                blocks.append(f"— Ayer, {spanish_date(yesterday)} —\n\n{body}")
+
+    return "\n\n".join([top, *[block for block in blocks if block]])
