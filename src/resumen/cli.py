@@ -9,6 +9,7 @@ import sys
 from collections.abc import Sequence
 
 from . import __version__
+from .config import ConfigError, load_api_key
 
 
 def progress(message: str) -> None:
@@ -33,6 +34,11 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
 def main(argv: Sequence[str] | None = None) -> int:
     """Run the pipeline. Returns the process exit code."""
     parse_args(argv)
+    try:
+        load_api_key(warn=progress)
+    except ConfigError as error:
+        print(error, file=sys.stderr)
+        return 1
     progress("resumen: sin fuentes que leer todavía")
     return 0
 
