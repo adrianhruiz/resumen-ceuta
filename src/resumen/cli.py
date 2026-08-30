@@ -9,7 +9,9 @@ import sys
 from collections.abc import Sequence
 
 from . import __version__
-from .config import ConfigError, database_path, load_api_key
+from .config import ConfigError, load_api_key
+from .feeds import sources
+from .pipeline import run
 from .store import connect
 
 
@@ -41,10 +43,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(error, file=sys.stderr)
         return 1
     # Opening the database creates it and applies the schema, on every run.
-    connect().close()
-    progress(
-        f"resumen: base de datos en {database_path()}, sin fuentes que leer todavía"
-    )
+    connection = connect()
+    try:
+        print(run(connection, sources(), progress))
+    finally:
+        connection.close()
     return 0
 
 
