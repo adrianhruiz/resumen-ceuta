@@ -65,3 +65,18 @@ def test_the_key_never_reaches_the_output(env_file: Path, valid_key: str) -> Non
     result = run()
     assert valid_key not in result.stdout
     assert valid_key not in result.stderr
+
+
+def test_the_database_is_created_on_the_first_run(env_file: Path, home: Path) -> None:
+    database = home / "data" / "resumen-ceuta" / "db.sqlite3"
+    assert not database.exists()
+    assert run().returncode == 0
+    assert database.is_file()
+
+
+def test_a_second_run_keeps_the_database(env_file: Path, home: Path) -> None:
+    run()
+    database = home / "data" / "resumen-ceuta" / "db.sqlite3"
+    stamp = database.stat().st_ino
+    assert run().returncode == 0
+    assert database.stat().st_ino == stamp
