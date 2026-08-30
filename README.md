@@ -7,16 +7,24 @@ de un vistazo, en la terminal.
 Día 30 de agosto · 36 noticias
 El Pueblo: completo hasta 21:30 · Faro: 3 lecturas (parcial)
 
-Política: vox anuncia acciones legales en el ámbito europeo contra la ong no
-  name kitchen; el pp critica la inacción del gobierno central un mes después
-  del inicio de la crisis migratoria; alberto núñez feijóo realizará este
-  miércoles su tercera visita a la ciudad
-Sucesos: ingresan en prisión tres jóvenes acusados de robar con violencia una
-  cadena a una mujer en el centro; detenidas tres personas tras lanzar botellas
-  con líquido corrosivo a militares en san amaro
-Economía: el gobierno prepara un plan de 165 millones de euros para paliar los
-  efectos de la crisis; la cámara de comercio calcula en 33 millones las
-  pérdidas económicas provocadas
+Política:
+  - vox anuncia acciones legales en el ámbito europeo contra la ong no name
+    kitchen
+  - el pp critica la inacción del gobierno central un mes después del inicio
+    de la crisis migratoria
+  - alberto núñez feijóo realizará este miércoles su tercera visita a la ciudad
+
+Sucesos:
+  - ingresan en prisión tres jóvenes acusados de robar con violencia una cadena
+    a una mujer en el centro
+  - detenidas tres personas tras lanzar botellas con líquido corrosivo a
+    militares en san amaro
+
+Economía:
+  - el gobierno prepara un plan de 165 millones de euros para paliar los
+    efectos de la crisis
+  - la cámara de comercio calcula en 33 millones las pérdidas económicas
+    provocadas
 ```
 
 Lee los feeds de [El Faro de Ceuta](https://elfarodeceuta.es) y

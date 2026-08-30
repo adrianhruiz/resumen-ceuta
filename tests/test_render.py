@@ -69,19 +69,32 @@ def test_a_summary_with_nothing_renders_as_nothing() -> None:
     assert render(Summary((), ()), width=72) == ""
 
 
-def test_entries_of_a_topic_share_one_paragraph() -> None:
+def test_every_entry_of_a_topic_is_its_own_bullet() -> None:
     text = render(summary(Topic("Frontera", (entry("uno"), entry("dos")))), width=72)
-    assert text == "Frontera: uno; dos"
+    assert text == "Frontera:\n  - uno\n  - dos"
+
+
+def test_topics_are_separated_by_a_blank_line() -> None:
+    text = render(
+        summary(
+            Topic("Frontera", (entry("una valla"),)),
+            Topic("Cultura", (entry("un concierto"),)),
+        ),
+        width=72,
+    )
+    assert text == "Frontera:\n  - una valla\n\nCultura:\n  - un concierto"
 
 
 # --- wrapping ------------------------------------------------------------
 
 
-def test_long_paragraphs_wrap_with_an_indent() -> None:
+def test_long_bullets_wrap_under_their_own_text() -> None:
     text = render(summary(Topic("Frontera", (entry("palabra " * 30),))), width=40)
     lines = text.splitlines()
     assert all(len(line) <= 40 for line in lines)
-    assert all(line.startswith("  ") for line in lines[1:])
+    assert lines[1].startswith("  - ")
+    # The continuation lines up with the first word, not with the dash.
+    assert all(line.startswith("    palabra") for line in lines[2:])
 
 
 def test_a_narrow_terminal_is_respected(monkeypatch: pytest.MonkeyPatch) -> None:
