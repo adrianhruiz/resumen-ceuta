@@ -34,19 +34,36 @@ día.
 
 ## Hallazgos sobre las fuentes
 
-Verificado el 2026-08-30 contra los feeds reales.
+Medido dos veces el 2026-08-30: al diseñar, y otra vez al escribir la ingesta
+(T5). La segunda medición corrigió tres cosas de la primera, marcadas abajo.
 
 | | El Faro | El Pueblo |
 |---|---|---|
 | Feed | `https://elfarodeceuta.es/feed/` | `https://www.elpueblodeceuta.es/rss/` |
 | Nota | `/rss` redirige a `/feed/` | **`/feed/` devuelve 404** |
-| Items en el feed | **exactamente 10** | 136 |
-| Ventana temporal | 06:27 → 12:54 = **6,5 h** | 25 jul → 30 ago = **36 días** |
-| Ritmo | ~35 noticias/día | ~3,7 noticias/día |
-| Contenido | completo (`content:encoded`) | completo (`content`) |
+| Items en el feed | **exactamente 10** (dos medidas) | 137 |
+| Ventana temporal | 15:23 → 17:54 = **2,5 h** | 7 feb → 30 ago = **204 días** |
+| Ritmo | ≥35/día, y en esa franja ~96/día | **~11/día** (últimos 7 días) |
+| Contenido | completo (`content:encoded`) | **solo la entradilla; sin `content:encoded`** |
 | Clasificación | `<category>` | sección en la URL (`/sec/politica/`) |
-| `guid` | `isPermaLink="false"`, `?p=1436869` | `isPermaLink="true"`, la URL completa |
+| `guid` | `isPermaLink="false"`, `?p=1436869` | `isPermaLink="true"`, `..._TIPO_ID.html` |
+| Tipo en el `guid` | — | **`_1_` artículo (124), `_3_` fotogalería (13)** |
 | `pubDate` | `+0000`, ya en UTC | `+0000`, ya en UTC |
+| Sin entradilla | — | 4 items, todos de opinión |
+
+Las tres correcciones de la segunda medición, cada una con test que la sostiene:
+
+- **El Pueblo no sirve el cuerpo.** Solo `<description>`. La primera medición
+  dijo lo contrario. El `body` queda vacío para esa fuente, lo cual no afecta
+  al prompt —que solo manda título y entradilla— pero cierra la puerta a
+  releer el cuerpo más adelante sin visitar la web.
+- **El Pueblo publica ~11/día, no 3,7.** Los 137 items abarcan 204 días porque
+  arrastran una cola de items viejos, pero 78 de ellos son de los últimos 7
+  días. El archivo sigue siendo real; el ritmo era tres veces mayor de lo
+  estimado.
+- **El dígito del `guid` de El Pueblo es un tipo de contenido**, no parte fija
+  del formato. El patrón `_1_(\d+)` del plan original habría descartado en
+  silencio las 13 fotogalerías.
 
 Consecuencias que condicionan el diseño:
 
@@ -54,8 +71,8 @@ Consecuencias que condicionan el diseño:
    10 de Faro = media mañana; 10 de El Pueblo = ~3 días.
 2. **El feed de Faro es una ventana deslizante de 10 items,** sin archivo. Lo
    que no se capture mientras está visible se pierde para siempre.
-3. **El feed de El Pueblo es su propio archivo.** Una sola lectura rellena 36
-   días hacia atrás. Perder ejecuciones no le afecta.
+3. **El feed de El Pueblo es su propio archivo.** Una sola lectura rellena
+   meses hacia atrás. Perder ejecuciones no le afecta.
 4. **La categoría `Noticias` de Faro no filtra nada.** La llevan 9 de cada 10
    items, incluido `En la Piel | Valdeaguas, una batería en el olvido`, que es
    justo el reportaje que hay que excluir. Solo `Opinión` discrimina. La
@@ -63,9 +80,16 @@ Consecuencias que condicionan el diseño:
 5. **El `guid` de El Pueblo lleva el titular incrustado** como slug
    (`.../pp-denuncia-gobierno-sigue-fallando_1_1187097.html`). Si corrigen un
    titular cambia el `guid` y el artículo entra duplicado. La parte estable es
-   el `_1_1187097`.
+   **el número final**, `1187097`, único entre tipos de contenido.
 6. **Coste irrelevante en tokens.** Un día entero son ~4k tokens con título +
    `description`. Cabe de sobra en Gemini Flash.
+7. **Las fotogalerías se ingieren como todo lo demás.** El patrón captura
+   cualquier tipo (`_\d+_(\d+)\.html`) porque filtrar aquí sería exactamente
+   la clasificación por metadatos que este proyecto le encargó al modelo, y
+   porque una fotogalería puede ser la única cobertura de un hecho.
+8. **La entradilla puede faltar.** Los artículos de opinión de El Pueblo llegan
+   con titular y nada más, así que el prompt tiene que tolerar su ausencia en
+   vez de asumir que siempre hay texto.
 
 ---
 
@@ -587,9 +611,11 @@ que sí se cubre, porque es barato: la ejecución con `TERM=dumb` y con
    locales llevan el email personal del autor, que queda rastreable de forma
    permanente. Se ofreció reescribirlos a la dirección `noreply` y se decidió
    no hacerlo.
-7. **El desequilibrio de fuentes es estructural.** Faro ~35/día frente a
-   El Pueblo ~3,7/día: el resumen será mayoritariamente Faro y la
-   deduplicación se disparará poco. El Pueblo aporta cobertura, no volumen.
+7. **El desequilibrio de fuentes es real, pero menor de lo estimado.** Faro
+   publica al menos 35/día frente a los ~11/día de El Pueblo, no los 3,7 que
+   decía la primera medición. El resumen seguirá siendo mayoritariamente Faro,
+   pero la deduplicación entre fuentes se disparará bastante más a menudo de lo
+   que este plan asumía, y conviene mirarla con lupa en T7.
 
 ---
 
