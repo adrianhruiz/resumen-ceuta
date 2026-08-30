@@ -80,6 +80,13 @@ INSERT_FETCH = """
 INSERT INTO fetches (source, fetched_at, ok, item_count) VALUES (?, ?, ?, ?)
 """
 
+SELECT_FETCHES = """
+SELECT source, fetched_at, ok, item_count
+FROM fetches
+WHERE fetched_at >= ? AND fetched_at < ?
+ORDER BY fetched_at
+"""
+
 
 @dataclass(frozen=True, slots=True)
 class Article:
@@ -99,6 +106,16 @@ class Article:
     def id(self) -> str:
         """The identifier the model sees and returns, e.g. 'faro:1436869'."""
         return f"{self.source}:{self.external_id}"
+
+
+@dataclass(frozen=True, slots=True)
+class Fetch:
+    """One attempt at reading a feed, successful or not."""
+
+    source: str
+    fetched_at: str
+    ok: bool
+    item_count: int | None
 
 
 def connect(path: Path | None = None) -> sqlite3.Connection:
@@ -146,3 +163,11 @@ def record_fetch(
     """Leave a trace of the read itself, successful or not."""
     with connection:
         connection.execute(INSERT_FETCH, (source, fetched_at, int(ok), item_count))
+
+
+def fetches_between(
+    connection: sqlite3.Connection, start: str, end: str
+) -> list[Fetch]:
+    """Every read attempted in that half-open interval, oldest first."""
+    rows = connection.execute(SELECT_FETCHES, (start, end))
+    return [Fetch(source, at, bool(ok), count) for source, at, ok, count in rows]
