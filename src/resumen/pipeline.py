@@ -1,11 +1,12 @@
 """The run itself: read both feeds, store what is new, show the day."""
 
+import json
 import sqlite3
 from collections.abc import Callable, Iterable, Sequence
 from datetime import UTC, date, datetime, timedelta
 
 from .feeds import MADRID, Source, fetch, parse
-from .gemini import Model, ask
+from .gemini import Model, ask, input_hash
 from .payload import Summary, validate
 from .render import header, render
 from .store import (
@@ -13,7 +14,9 @@ from .store import (
     articles_for_day,
     fetches_between,
     insert_articles,
+    read_summary,
     record_fetch,
+    write_summary,
 )
 
 MONTHS = (
@@ -89,6 +92,54 @@ def summarise(articles: Sequence[Article], model: Model) -> Summary:
     return validate(ask(model, articles), {article.id for article in articles})
 
 
+def summary_for_day(
+    connection: sqlite3.Connection,
+    day: str,
+    articles: Sequence[Article],
+    model: Callable[[], Model],
+    progress: Callable[[str], None],
+    now: datetime | None = None,
+) -> Summary:
+    """The day's summary, asking the model only for what it has not judged.
+
+    Running the app twice in a row must not cost twice. The stored summary
+    knows which articles it already accounted for, so a later run pays only
+    for what appeared since, handing the previous summary back as context.
+    """
+    stored = read_summary(connection, day)
+    if stored is not None and stored.input_hash != input_hash(stored.covered_ids):
+        # The instructions or the model moved. What they produced is stale, so
+        # it is dropped here and the day is summarised from scratch below.
+        progress("el prompt o el modelo han cambiado: se rehace el día entero")
+        stored = None
+
+    if stored is not None:
+        covered = set(stored.covered_ids)
+        pending = [article for article in articles if article.id not in covered]
+        if not pending:
+            progress("nada nuevo desde la última vez: sin llamar al modelo")
+            return validate(json.loads(stored.payload), covered)
+        progress(f"resumiendo {len(pending)} noticias nuevas…")
+        summary = validate(
+            ask(model(), pending, json.loads(stored.payload)),
+            covered | {article.id for article in pending},
+        )
+    else:
+        progress(f"resumiendo {len(articles)} noticias…")
+        summary = summarise(articles, model())
+
+    written_at = (now or datetime.now(UTC)).isoformat()
+    write_summary(
+        connection,
+        day,
+        summary.covered_ids,
+        input_hash(summary.covered_ids),
+        summary.as_json(),
+        written_at,
+    )
+    return summary
+
+
 def run(
     connection: sqlite3.Connection,
     sources: Iterable[Source],
@@ -112,6 +163,5 @@ def run(
         # Nothing to summarise is an answer, and it costs no API call.
         return top
 
-    progress(f"resumiendo {len(articles)} noticias…")
-    body = render(summarise(articles, model()))
+    body = render(summary_for_day(connection, day, articles, model, progress, now))
     return f"{top}\n\n{body}" if body else top
