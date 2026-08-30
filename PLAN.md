@@ -251,6 +251,17 @@ mañana y cero el resto del día.
 Degradación: fuente caída → se resume con la otra y la cabecera lo dice.
 Gemini con error tras 3 intentos → error claro, sin escribir caché.
 
+**Solo se aborta cuando no hay nada que enseñar**: ninguna fuente legible *y*
+nada guardado del día. Si esta mañana sí se leyó y ahora la red está caída, se
+imprime lo guardado y la cabecera añade `ahora caído` a la fuente que ha dejado
+de responder. Es una corrección al plan de tests, que decía abortar siempre que
+cayeran las dos: negarse a imprimir un resumen que ya existe es peor para quien
+lee que enseñarlo con una cabecera honesta.
+
+Una fuente que responde `200` con una página HTML no es un día tranquilo: se
+detecta por `feed.version` vacío, porque `bozo` no lo distingue y sin esa
+comprobación quedaría registrado como «no publicaron nada».
+
 ---
 
 ## Instalación y uso
@@ -511,10 +522,12 @@ orden de magnitud, no ruido de la máquina de CI.
 
 ### Resiliencia
 
-- Faro con timeout, 500, 404, XML truncado o charset roto → se resume con El
-  Pueblo, `fetches.ok=0`, la cabecera lo declara, sale 0.
-- Las dos fuentes caídas → mensaje claro, sale ≠ 0, **sin llegar a llamar a
-  Gemini**.
+- Faro con timeout, 500, 404 o basura → se resume con El Pueblo,
+  `fetches.ok=0`, la cabecera lo declara, sale 0.
+- Un feed truncado conserva lo que sí se pudo interpretar: tirar esos
+  artículos perdería noticias que nada volverá a traer.
+- Las dos fuentes caídas **y** nada guardado del día → mensaje claro, sale ≠ 0,
+  **sin llegar a llamar a Gemini**. Con algo guardado, se imprime.
 - Gemini falla 3 veces → error, `summaries` sin fila, y la ejecución siguiente
   reintenta como si nada.
 - Gemini falla la primera y responde la segunda → un resumen, una fila.

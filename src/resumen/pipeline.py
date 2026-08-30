@@ -5,7 +5,7 @@ import sqlite3
 from collections.abc import Callable, Iterable, Sequence
 from datetime import UTC, date, datetime, timedelta
 
-from .feeds import MADRID, Source, fetch, parse
+from .feeds import MADRID, FeedError, Source, fetch, parse
 from .gemini import Model, ask, input_hash
 from .payload import Summary, validate
 from .render import header, render
@@ -74,25 +74,35 @@ def ingest(
     sources: Iterable[Source],
     progress: Callable[[str], None],
     now: datetime | None = None,
-) -> None:
+) -> list[str]:
     """Read every source, store what is new, and leave a trace of each read.
 
-    One source failing must not cost the other one: the full taxonomy of
-    failures is T15's job, but the skeleton already degrades rather than dies.
+    One source failing must not cost the other one, so a read that goes wrong
+    is recorded and stepped over. Only FeedError is caught: anything else is a
+    bug in this code, and swallowing it would file it as an outlet's problem.
+
+    Returns the names of the sources that failed.
     """
     fetched_at = (now or datetime.now(UTC)).isoformat()
+    failed = []
     for source in sources:
         try:
             articles = parse(source, fetch(source))
-        except Exception as error:
+        except FeedError as error:
             record_fetch(connection, source.name, fetched_at, ok=False)
-            progress(f"{source.name}: no se pudo leer ({error})")
+            progress(f"{source.display}: no se pudo leer, {error}")
+            failed.append(source.name)
             continue
         stored = insert_articles(connection, articles, fetched_at)
         record_fetch(
             connection, source.name, fetched_at, ok=True, item_count=len(articles)
         )
         progress(f"{source.name}: {len(articles)} items, {stored} nuevos")
+    return failed
+
+
+class NothingToShow(RuntimeError):
+    """No source could be read and there is nothing stored to fall back on."""
 
 
 def summarise(articles: Sequence[Article], model: Model) -> Summary:
@@ -164,9 +174,17 @@ def run(
     `model` is a factory, not a model: a day with nothing published must not
     pay for building a client, and building one loads the SDK.
     """
-    ingest(connection, sources, progress, now)
+    attempted = tuple(sources)
+    failed = ingest(connection, attempted, progress, now)
     day = today(now)
     articles = articles_for_day(connection, day)
+
+    if attempted and len(failed) == len(attempted) and not articles:
+        # Nothing readable and nothing stored: saying so beats a blank page.
+        raise NothingToShow(
+            "No se pudo leer ninguna fuente y no hay nada guardado de hoy. "
+            "Comprueba la conexión y vuelve a intentarlo."
+        )
     start, end = day_bounds(day)
     top = header(
         spanish_date(day), len(articles), fetches_between(connection, start, end)

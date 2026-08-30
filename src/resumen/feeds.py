@@ -8,6 +8,7 @@ written once.
 
 import os
 import re
+import urllib.error
 import urllib.request
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
@@ -31,6 +32,10 @@ SKIPPED_TAGS = frozenset({"script", "style"})
 BREAKING_TAGS = frozenset(
     {"p", "div", "br", "li", "h1", "h2", "h3", "h4", "blockquote"}
 )
+
+
+class FeedError(RuntimeError):
+    """A source could not be read, or what came back was not a feed."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -154,13 +159,24 @@ def fetch(source: Source) -> bytes:
     if not source.url.startswith(("https://", "http://")):
         raise ValueError(f"feed URL must be http(s): {source.url}")
     request = urllib.request.Request(source.url, headers={"User-Agent": USER_AGENT})  # noqa: S310
-    with urllib.request.urlopen(request, timeout=TIMEOUT_SECONDS) as response:  # noqa: S310
-        return response.read()
+    try:
+        with urllib.request.urlopen(request, timeout=TIMEOUT_SECONDS) as response:  # noqa: S310
+            return response.read()
+    except urllib.error.HTTPError as error:
+        raise FeedError(f"el servidor respondió {error.code}") from error
+    except (urllib.error.URLError, TimeoutError, OSError) as error:
+        reason = getattr(error, "reason", error)
+        raise FeedError(f"no responde ({reason})") from error
 
 
 def parse(source: Source, raw: bytes) -> list[Article]:
     """Every item that carries a usable id. The rest are dropped, not guessed."""
     feed = feedparser.parse(raw)
+    # `version` is empty for anything that is not a feed. bozo is not enough:
+    # an outlet serving an HTML error page with status 200 parses without
+    # complaint and would otherwise be filed as "published nothing today".
+    if not feed.version:
+        raise FeedError("la respuesta no es un feed")
     articles = []
     for entry in feed.entries:
         identifier = external_id(source, entry.get("id") or entry.get("link") or "")

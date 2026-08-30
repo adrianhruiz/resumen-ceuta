@@ -121,3 +121,13 @@ def test_the_days_the_clocks_change_are_not_24_hours(day: str, hours: int) -> No
     start, end = day_bounds(day)
     span = datetime.fromisoformat(end) - datetime.fromisoformat(start)
     assert span.total_seconds() / 3600 == hours
+
+
+def test_a_source_that_answered_earlier_and_fails_now_says_both() -> None:
+    reads = [read("pueblo", "18:14"), read("pueblo", "19:00", ok=False)]
+    assert "El Pueblo: completo hasta 20:14, ahora caído" in coverage(reads)
+
+
+def test_a_source_that_recovered_does_not_carry_the_warning() -> None:
+    reads = [read("faro", "07:00", ok=False), read("faro", "12:00")]
+    assert coverage(reads).endswith("Faro: 1 lectura (parcial)")
