@@ -150,9 +150,14 @@ def ask(
     model: Model,
     articles: Sequence[Article],
     previous: dict[str, Any] | None = None,
-    sleep: Callable[[float], None] = time.sleep,
+    sleep: Callable[[float], None] | None = None,
 ) -> dict[str, Any]:
-    """One summary, retried up to three times. Never writes anything."""
+    """One summary, retried up to three times. Never writes anything.
+
+    `sleep` is resolved here and not in the signature: a default argument is
+    bound at import time, which would make the wait impossible to replace.
+    """
+    wait = sleep if sleep is not None else time.sleep
     prompt = build_prompt(articles, previous)
     last: Exception | None = None
     for attempt in range(ATTEMPTS):
@@ -161,7 +166,7 @@ def ask(
         except Exception as error:  # noqa: BLE001 - the SDK raises its own zoo
             last = error
             if attempt < len(BACKOFF_SECONDS):
-                sleep(BACKOFF_SECONDS[attempt])
+                wait(BACKOFF_SECONDS[attempt])
     raise TransportError(f"Gemini no respondió tras {ATTEMPTS} intentos: {last}")
 
 
@@ -170,8 +175,15 @@ class Gemini:
 
     def __init__(self, api_key: str, model: str = MODEL) -> None:
         # Imported here so a cache-warm run never pays for loading the SDK.
+        import logging
+
         from google import genai
         from google.genai import types
+
+        # The SDK warns about automatic function calling on every call. stderr
+        # belongs to the user's progress, not to advice about an API this app
+        # does not use.
+        logging.getLogger("google_genai.models").setLevel(logging.ERROR)
 
         self._client = genai.Client(
             api_key=api_key,

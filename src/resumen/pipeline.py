@@ -5,7 +5,9 @@ from collections.abc import Callable, Iterable, Sequence
 from datetime import UTC, date, datetime, timedelta
 
 from .feeds import MADRID, Source, fetch, parse
-from .render import header, local_time
+from .gemini import Model, ask
+from .payload import Summary, validate
+from .render import header, render
 from .store import (
     Article,
     articles_for_day,
@@ -82,21 +84,23 @@ def ingest(
         progress(f"{source.name}: {len(articles)} items, {stored} nuevos")
 
 
-def headlines(articles: Sequence[Article]) -> str:
-    """The day as a plain list. The grouped summary arrives with T11."""
-    return "\n".join(
-        f"  {local_time(article.pubdate)} · {article.source} · {article.title}"
-        for article in articles
-    )
+def summarise(articles: Sequence[Article], model: Model) -> Summary:
+    """One call, and nothing believed until it has been checked."""
+    return validate(ask(model, articles), {article.id for article in articles})
 
 
 def run(
     connection: sqlite3.Connection,
     sources: Iterable[Source],
+    model: Callable[[], Model],
     progress: Callable[[str], None],
     now: datetime | None = None,
 ) -> str:
-    """Everything a run does, minus the printing."""
+    """Everything a run does, minus the printing.
+
+    `model` is a factory, not a model: a day with nothing published must not
+    pay for building a client, and building one loads the SDK.
+    """
     ingest(connection, sources, progress, now)
     day = today(now)
     articles = articles_for_day(connection, day)
@@ -104,5 +108,10 @@ def run(
     top = header(
         spanish_date(day), len(articles), fetches_between(connection, start, end)
     )
-    body = headlines(articles)
+    if not articles:
+        # Nothing to summarise is an answer, and it costs no API call.
+        return top
+
+    progress(f"resumiendo {len(articles)} noticias…")
+    body = render(summarise(articles, model()))
     return f"{top}\n\n{body}" if body else top
