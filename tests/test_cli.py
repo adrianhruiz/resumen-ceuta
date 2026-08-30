@@ -21,12 +21,12 @@ def run(*args: str) -> subprocess.CompletedProcess[str]:
     )
 
 
-def test_exits_zero(env_file: Path, served_env: object) -> None:
+def test_exits_zero(env_file: Path, empty_env: None) -> None:
     assert run().returncode == 0
 
 
-def test_stdout_carries_the_summary_and_nothing_else(
-    env_file: Path, served_env: object
+def test_stdout_carries_the_day_and_nothing_else(
+    env_file: Path, empty_env: None
 ) -> None:
     # Everything on stdout must be the day itself; the reading of the feeds is
     # reported on stderr, or it would end up in the user's pipe.
@@ -35,10 +35,13 @@ def test_stdout_carries_the_summary_and_nothing_else(
     assert "items" not in stdout
 
 
-def test_progress_goes_to_stderr(env_file: Path, served_env: object) -> None:
-    stderr = run().stderr
-    assert "faro: 10 items" in stderr
-    assert "pueblo: 137 items" in stderr
+def test_a_run_that_reads_nothing_still_says_what_day_it_is(
+    env_file: Path, empty_env: None
+) -> None:
+    result = run()
+    assert result.returncode == 0
+    assert "sin noticias" in result.stdout
+    assert "sin leer" not in result.stdout
 
 
 def test_version_goes_to_stdout() -> None:
@@ -49,7 +52,7 @@ def test_version_goes_to_stdout() -> None:
     assert result.stdout.strip() == f"resumen {__version__}"
 
 
-def test_force_is_accepted(env_file: Path, served_env: object) -> None:
+def test_force_is_accepted(env_file: Path, empty_env: None) -> None:
     assert run("--force").returncode == 0
 
 
@@ -68,7 +71,7 @@ def test_a_missing_key_stops_the_run_with_instructions(home: Path) -> None:
 
 
 def test_the_key_never_reaches_the_output(
-    env_file: Path, valid_key: str, served_env: object
+    env_file: Path, valid_key: str, empty_env: None
 ) -> None:
     result = run()
     assert valid_key not in result.stdout
@@ -76,7 +79,7 @@ def test_the_key_never_reaches_the_output(
 
 
 def test_the_database_is_created_on_the_first_run(
-    env_file: Path, home: Path, served_env: object
+    env_file: Path, home: Path, empty_env: None
 ) -> None:
     database = home / "data" / "resumen-ceuta" / "db.sqlite3"
     assert not database.exists()
@@ -85,7 +88,7 @@ def test_the_database_is_created_on_the_first_run(
 
 
 def test_a_second_run_keeps_the_database(
-    env_file: Path, home: Path, served_env: object
+    env_file: Path, home: Path, empty_env: None
 ) -> None:
     run()
     database = home / "data" / "resumen-ceuta" / "db.sqlite3"

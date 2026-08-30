@@ -3,10 +3,12 @@
 import stat
 from collections.abc import Callable, Iterator
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from pytest_httpserver import HTTPServer
 
+from resumen import gemini
 from resumen.feeds import SOURCES, Source
 from resumen.store import Article
 
@@ -14,6 +16,16 @@ FIXTURES = Path(__file__).parent / "fixtures" / "feeds"
 RECORDED = ("faro-2026-08-30.xml", "pueblo-2026-08-30.xml")
 
 VALID_KEY = "clave-de-prueba"
+
+
+@pytest.fixture(autouse=True)
+def instant_backoff(monkeypatch: pytest.MonkeyPatch) -> None:
+    """No test ever waits out a real retry backoff.
+
+    Only this module's reference to `time` is replaced, so nothing else in the
+    process loses its sleep.
+    """
+    monkeypatch.setattr(gemini, "time", SimpleNamespace(sleep=lambda seconds: None))
 
 
 @pytest.fixture
@@ -92,3 +104,34 @@ def served_env(
     for source in served_feeds:
         monkeypatch.setenv(f"RESUMEN_{source.name.upper()}_URL", source.url)
     return served_feeds
+
+
+@pytest.fixture
+def recorded_answer() -> str:
+    """The answer the real model gave on 2026-08-30, replayed."""
+    return (FIXTURES.parent / "gemini" / "summary-2026-08-30.json").read_text(
+        encoding="utf-8"
+    )
+
+
+EMPTY_FEED = b"""<?xml version="1.0"?><rss version="2.0"><channel>
+<title>vacio</title></channel></rss>"""
+
+
+@pytest.fixture
+def empty_env(httpserver: HTTPServer, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Both feeds served empty, through the environment.
+
+    The CLI tests that run a child process are about plumbing: exit codes, the
+    stdout/stderr split, the database being created. Giving them a day with no
+    articles keeps them offline and free of the model, whose behaviour is
+    tested in process elsewhere.
+    """
+    for source in SOURCES:
+        path = f"/vacio-{source.name}"
+        httpserver.expect_request(path).respond_with_data(
+            EMPTY_FEED, content_type="application/rss+xml"
+        )
+        monkeypatch.setenv(
+            f"RESUMEN_{source.name.upper()}_URL", httpserver.url_for(path)
+        )

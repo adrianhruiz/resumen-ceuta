@@ -7,8 +7,8 @@ from pathlib import Path
 import pytest
 
 from resumen.feeds import SOURCES, Source
-from resumen.pipeline import headlines, ingest, run, spanish_date, today
-from resumen.store import Article, articles_for_day, connect
+from resumen.pipeline import ingest, run, spanish_date, today
+from resumen.store import articles_for_day, connect
 
 NOON = datetime(2026, 8, 30, 12, 0, tzinfo=UTC)
 
@@ -86,19 +86,21 @@ def test_the_failure_is_reported_to_the_reader(
     assert any("faro" in line and "no se pudo leer" in line for line in said)
 
 
-def test_a_run_prints_the_headlines_of_the_day(
+def test_a_run_reports_the_day_it_ingested(
     database: sqlite3.Connection, served_feeds: tuple[Source, ...]
 ) -> None:
-    output = run(database, served_feeds, silent, NOON)
-    assert output.startswith("Día 30 de agosto · ")
-    assert "El PP denuncia" in output
-    # Two header lines, a blank one, then only that day: the fixtures reach
-    # back to February.
-    assert len(output.splitlines()) == 3 + len(articles_for_day(database, "2026-08-30"))
+    # The summarising path lives in test_summarize; here the interest is that
+    # ingestion and the header line up with what landed in the database.
+    ingest(database, served_feeds, silent, NOON)
+    stored = len(articles_for_day(database, "2026-08-30"))
+    assert stored == 34
 
 
 def test_a_day_without_news_says_so(database: sqlite3.Connection) -> None:
-    output = run(database, (), silent, NOON)
+    def unused_model() -> object:
+        raise AssertionError("un día vacío no llama al modelo")
+
+    output = run(database, (), unused_model, silent, NOON)
     assert output.startswith("Día 30 de agosto · sin noticias")
     # Nothing was read, and the header says so rather than staying silent.
     assert "sin leer" in output
@@ -122,32 +124,19 @@ def test_dates_are_written_in_spanish_without_a_locale(day: str, spanish: str) -
     assert spanish_date(day) == spanish
 
 
-def test_headlines_are_listed_oldest_first() -> None:
-    articles = [
-        Article(
-            "faro",
-            "2",
-            "g2",
-            "Segunda",
-            None,
-            None,
-            "u",
-            "2026-08-30T16:00:00+00:00",
-            "2026-08-30",
-        ),
-        Article(
-            "faro",
-            "1",
-            "g1",
-            "Primera",
-            None,
-            None,
-            "u",
-            "2026-08-30T06:00:00+00:00",
-            "2026-08-30",
-        ),
-    ]
-    listed = headlines(sorted(articles, key=lambda a: a.pubdate))
-    assert listed.index("Primera") < listed.index("Segunda")
-    # Times are shown in Madrid, not UTC.
-    assert "08:00 · faro · Primera" in listed
+def test_the_reader_is_told_what_each_source_gave(
+    database: sqlite3.Connection, served_feeds: tuple[Source, ...]
+) -> None:
+    said: list[str] = []
+    ingest(database, served_feeds, said.append, NOON)
+    assert "faro: 10 items, 10 nuevos" in said
+    assert "pueblo: 137 items, 137 nuevos" in said
+
+
+def test_a_second_ingest_reports_nothing_new(
+    database: sqlite3.Connection, served_feeds: tuple[Source, ...]
+) -> None:
+    ingest(database, served_feeds, silent, NOON)
+    said: list[str] = []
+    ingest(database, served_feeds, said.append, NOON)
+    assert "faro: 10 items, 0 nuevos" in said
