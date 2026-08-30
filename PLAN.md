@@ -34,19 +34,36 @@ día.
 
 ## Hallazgos sobre las fuentes
 
-Verificado el 2026-08-30 contra los feeds reales.
+Medido dos veces el 2026-08-30: al diseñar, y otra vez al escribir la ingesta
+(T5). La segunda medición corrigió tres cosas de la primera, marcadas abajo.
 
 | | El Faro | El Pueblo |
 |---|---|---|
 | Feed | `https://elfarodeceuta.es/feed/` | `https://www.elpueblodeceuta.es/rss/` |
 | Nota | `/rss` redirige a `/feed/` | **`/feed/` devuelve 404** |
-| Items en el feed | **exactamente 10** | 136 |
-| Ventana temporal | 06:27 → 12:54 = **6,5 h** | 25 jul → 30 ago = **36 días** |
-| Ritmo | ~35 noticias/día | ~3,7 noticias/día |
-| Contenido | completo (`content:encoded`) | completo (`content`) |
+| Items en el feed | **exactamente 10** (dos medidas) | 137 |
+| Ventana temporal | 15:23 → 17:54 = **2,5 h** | 7 feb → 30 ago = **204 días** |
+| Ritmo | ≥35/día, y en esa franja ~96/día | **~11/día** (últimos 7 días) |
+| Contenido | completo (`content:encoded`) | **solo la entradilla; sin `content:encoded`** |
 | Clasificación | `<category>` | sección en la URL (`/sec/politica/`) |
-| `guid` | `isPermaLink="false"`, `?p=1436869` | `isPermaLink="true"`, la URL completa |
+| `guid` | `isPermaLink="false"`, `?p=1436869` | `isPermaLink="true"`, `..._TIPO_ID.html` |
+| Tipo en el `guid` | — | **`_1_` artículo (124), `_3_` fotogalería (13)** |
 | `pubDate` | `+0000`, ya en UTC | `+0000`, ya en UTC |
+| Sin entradilla | — | 4 items, todos de opinión |
+
+Las tres correcciones de la segunda medición, cada una con test que la sostiene:
+
+- **El Pueblo no sirve el cuerpo.** Solo `<description>`. La primera medición
+  dijo lo contrario. El `body` queda vacío para esa fuente, lo cual no afecta
+  al prompt —que solo manda título y entradilla— pero cierra la puerta a
+  releer el cuerpo más adelante sin visitar la web.
+- **El Pueblo publica ~11/día, no 3,7.** Los 137 items abarcan 204 días porque
+  arrastran una cola de items viejos, pero 78 de ellos son de los últimos 7
+  días. El archivo sigue siendo real; el ritmo era tres veces mayor de lo
+  estimado.
+- **El dígito del `guid` de El Pueblo es un tipo de contenido**, no parte fija
+  del formato. El patrón `_1_(\d+)` del plan original habría descartado en
+  silencio las 13 fotogalerías.
 
 Consecuencias que condicionan el diseño:
 
@@ -54,8 +71,8 @@ Consecuencias que condicionan el diseño:
    10 de Faro = media mañana; 10 de El Pueblo = ~3 días.
 2. **El feed de Faro es una ventana deslizante de 10 items,** sin archivo. Lo
    que no se capture mientras está visible se pierde para siempre.
-3. **El feed de El Pueblo es su propio archivo.** Una sola lectura rellena 36
-   días hacia atrás. Perder ejecuciones no le afecta.
+3. **El feed de El Pueblo es su propio archivo.** Una sola lectura rellena
+   meses hacia atrás. Perder ejecuciones no le afecta.
 4. **La categoría `Noticias` de Faro no filtra nada.** La llevan 9 de cada 10
    items, incluido `En la Piel | Valdeaguas, una batería en el olvido`, que es
    justo el reportaje que hay que excluir. Solo `Opinión` discrimina. La
@@ -63,9 +80,16 @@ Consecuencias que condicionan el diseño:
 5. **El `guid` de El Pueblo lleva el titular incrustado** como slug
    (`.../pp-denuncia-gobierno-sigue-fallando_1_1187097.html`). Si corrigen un
    titular cambia el `guid` y el artículo entra duplicado. La parte estable es
-   el `_1_1187097`.
+   **el número final**, `1187097`, único entre tipos de contenido.
 6. **Coste irrelevante en tokens.** Un día entero son ~4k tokens con título +
    `description`. Cabe de sobra en Gemini Flash.
+7. **Las fotogalerías se ingieren como todo lo demás.** El patrón captura
+   cualquier tipo (`_\d+_(\d+)\.html`) porque filtrar aquí sería exactamente
+   la clasificación por metadatos que este proyecto le encargó al modelo, y
+   porque una fotogalería puede ser la única cobertura de un hecho.
+8. **La entradilla puede faltar.** Los artículos de opinión de El Pueblo llegan
+   con titular y nada más, así que el prompt tiene que tolerar su ausencia en
+   vez de asumir que siempre hay texto.
 
 ---
 
@@ -155,7 +179,10 @@ día con cero artículos → `Sin noticias`; día ya cubierto → render directo
 ### Llamada a Gemini
 
 Una por ejecución como máximo, `temperature=0`, tope de **3 intentos** con
-backoff exponencial. Recibe el `payload` actual como contexto y solo los
+backoff exponencial (1 s y 2 s), timeout de 90 s y **el reintento automático
+del SDK desactivado**: si google-genai reintenta por debajo, la política de
+tres intentos es decorativa y un modelo caído se convierte en un cuelgue de
+minutos en vez de un error. Medido el 2026-08-30. Recibe el `payload` actual como contexto y solo los
 artículos de `ids - covered_ids`, con **título + `description`**: la
 entradilla del RSS ya trae el qué-quién-dónde, que es todo lo que necesita una
 línea de resumen. El `body` se guarda pero no se envía.
@@ -224,6 +251,17 @@ mañana y cero el resto del día.
 Degradación: fuente caída → se resume con la otra y la cabecera lo dice.
 Gemini con error tras 3 intentos → error claro, sin escribir caché.
 
+**Solo se aborta cuando no hay nada que enseñar**: ninguna fuente legible *y*
+nada guardado del día. Si esta mañana sí se leyó y ahora la red está caída, se
+imprime lo guardado y la cabecera añade `ahora caído` a la fuente que ha dejado
+de responder. Es una corrección al plan de tests, que decía abortar siempre que
+cayeran las dos: negarse a imprimir un resumen que ya existe es peor para quien
+lee que enseñarlo con una cabecera honesta.
+
+Una fuente que responde `200` con una página HTML no es un día tranquilo: se
+detecta por `feed.version` vacío, porque `bozo` no lo distingue y sin esa
+comprobación quedaría registrado como «no publicaron nada».
+
 ---
 
 ## Instalación y uso
@@ -232,9 +270,14 @@ Arch marca el Python del sistema como *externally managed* (PEP 668), así que
 un entorno aislado es obligatorio.
 
 ```bash
-sudo pacman -S uv
+mise use -g uv@latest            # o 'sudo pacman -S uv'
 uv tool install --editable .     # deja 'resumen' en ~/.local/bin
 ```
+
+`uv` se instaló por mise y no por pacman (2026-08-30): `sudo` no tenía terminal
+para pedir la contraseña, y mise ya estaba en uso para el resto de
+herramientas. Queda en `~/.config/mise/config.toml`, sin root y reversible con
+`mise unuse -g uv`.
 
 Con `[project.scripts] resumen = "resumen.cli:main"` en `pyproject.toml`.
 `--editable` hace que tocar el código se refleje sin reinstalar.
@@ -244,9 +287,17 @@ resumen            # hoy, y ayer también si hoy va flojo
 resumen --force    # regenera ignorando la caché
 ```
 
+Añadir una dependencia obliga a reinstalar la herramienta
+(`uv tool install --editable . --reinstall`): el modo editable refleja el
+código, no el conjunto de dependencias.
+
 No hay argumento de fecha ni subcomando `init`: el esquema se crea con
 `CREATE TABLE IF NOT EXISTS` en cada arranque. La primera ejecución crea la BD,
 trae los 36 días de El Pueblo y las 6,5 h de Faro, y ya sirve.
+
+`RESUMEN_FARO_URL` y `RESUMEN_PUEBLO_URL` apuntan la app a otro sitio: un
+servidor local en los tests, o un espejo si algún medio mueve su feed. Sin
+ellas se usan las URL reales.
 
 Rutas fijas, independientes del directorio desde el que se lance:
 
@@ -285,6 +336,11 @@ año, no merece código.
 
 ## Plan de tareas
 
+**Estado: las 17 tareas están en `develop`, cada una con su PR y la puerta en
+verde (2026-08-30).** Lo que sigue quedó como se planificó salvo dos cambios
+anotados en su sitio: CI se adelantó al segundo puesto, y varias medidas
+sobre los feeds resultaron falsas y están corregidas en los hallazgos.
+
 Cuatro hitos. El hito 0 es un esqueleto que anda: el camino end-to-end más fino
 que se puede ejecutar, sin pasar por Gemini. CI entra la segunda, antes que
 nada sustancial, porque es la puerta que protege `develop`.
@@ -294,7 +350,7 @@ nada sustancial, porque es la puerta que protege `develop`.
 | Id | Tarea | Criterio de aceptación | Dep. | Rama |
 |---|---|---|---|---|
 | T1 | Andamiaje del proyecto y CLI | `uv tool install --editable .` deja `resumen` en el PATH; sale con 0, `stdout` limpio y el progreso por `stderr` | — | `feature/project-skeleton` |
-| T2 | CI en GitHub Actions | La puerta corre en cada push y PR; un PR con la suite roja no se puede mergear | T1 | `feature/ci` |
+| T2 | CI en GitHub Actions | La puerta corre en cada PR y en los push a `main` y `develop`; un PR con la suite roja no se puede mergear y el push directo a las dos ramas permanentes se rechaza | T1 | `feature/ci` |
 | T3 | Rutas fijas y carga de la key | Sin `~/.config/resumen-ceuta/env` el arranque muere nombrando el fichero y su contenido; las rutas se redirigen por variable de entorno en los tests | T2 | `feature/config-paths` |
 | T4 | Esquema SQLite y capa de acceso | `CREATE TABLE IF NOT EXISTS` en cada arranque; insertar dos veces el mismo `(source, external_id)` deja una fila; `articles_for_day` filtra por día | T3 | `feature/store` |
 | T5 | Ingesta y parseo de los dos feeds | Contra fixtures: `external_id` correcto por fuente, cuerpo en texto plano sin imágenes, `pubdate` en UTC y `day` cortado en `Europe/Madrid` | T4 | `feature/feed-ingest` |
@@ -384,6 +440,16 @@ Los tests de contrato quedan **fuera** de esa puerta: dependen de servidores
 ajenos y romperían PRs por motivos que no son el PR. Van en un cron nocturno
 que abre issue al fallar.
 
+**La puerta bloquea, no solo informa.** El ruleset `ramas permanentes` cubre
+`refs/heads/main` y `refs/heads/develop` con cuatro reglas: PR obligatorio,
+`gate` como check obligatorio en modo estricto (la rama tiene que estar al día
+con su base), y prohibición de borrado y de push forzado. Sin excepciones para
+nadie, administrador incluido.
+
+Esto es lo que hizo público el repositorio el 2026-08-30: en privado con plan
+gratuito la API responde `403 Upgrade to GitHub Pro or make this repository
+public`, y sin ruleset la regla central de este plan sería solo una promesa.
+
 Cobertura expresada en comportamientos, no en porcentaje. Ningún merge sin test
 que cubra: el corte del día en `Europe/Madrid`, la deduplicación por
 `external_id`, el tope de una llamada por ejecución, las cinco formas de
@@ -446,24 +512,37 @@ local y cliente falso:
 
 ### Rendimiento — presupuestos en números
 
-| Qué | Presupuesto | Cómo se mide |
+Todo medido el 2026-08-30. El presupuesto va varias veces por encima de lo
+medido a propósito: un fallo tiene que significar una regresión de orden de
+magnitud, no una máquina de CI ocupada.
+
+| Qué | Presupuesto | Medido |
 |---|---|---|
-| **Llamadas a la API por ejecución** | **≤ 1**, y 0 con caché caliente | Contador del cliente falso. Es el presupuesto que importa |
-| Ejecución completa con caché caliente | < 1,5 s | `perf_counter`, feeds en local |
-| Arranque hasta primera salida | < 400 ms | Sin red; mide importar y abrir la BD |
-| Prompt de un día completo (~35 noticias) | ≤ 6.000 tokens | Conteo con el tokenizador; la estimación previa era ~4k |
-| Ingesta de los 136 items de El Pueblo | < 2 s | BD en `tmp_path` |
-| Crecimiento de la BD | ≤ 200 KB/día con cuerpos | La estimación previa era ~150 KB, 55 MB/año |
+| **Llamadas a la API por ejecución** | **≤ 1**, y 0 con caché caliente | 1 y 0. Es el presupuesto que importa |
+| Ejecución completa con caché caliente | < 1,5 s | **0,63 s** contra los feeds reales, casi todo red |
+| Ejecución con llamada al modelo | < 90 s | **29,3 s** con 34 artículos |
+| Arranque hasta primera salida | < 400 ms | **92 ms**, lo que compra importar el SDK tarde |
+| Prompt de un día completo | ≤ 6.000 tokens | **4.250 tokens**, 14.515 caracteres |
+| Lectura y parseo de ambos feeds | < 2 s | **0,078 s** para 147 items |
+| Crecimiento de la BD | ≤ 200 KB/día con cuerpos | **164 KB** con 147 artículos |
+
+El presupuesto de tokens se comprueba **en caracteres**, para que el test sea
+determinista y no necesite red: 3,42 caracteres por token, medido contra el
+tokenizador de la API. Un test de contrato vigila que esa proporción siga
+siendo válida, porque si el tokenizador se vuelve más denso el presupuesto en
+caracteres deja de significar 6.000 tokens sin que nadie se entere.
 
 Umbrales holgados y marcados `perf`: un fallo tiene que significar regresión de
 orden de magnitud, no ruido de la máquina de CI.
 
 ### Resiliencia
 
-- Faro con timeout, 500, 404, XML truncado o charset roto → se resume con El
-  Pueblo, `fetches.ok=0`, la cabecera lo declara, sale 0.
-- Las dos fuentes caídas → mensaje claro, sale ≠ 0, **sin llegar a llamar a
-  Gemini**.
+- Faro con timeout, 500, 404 o basura → se resume con El Pueblo,
+  `fetches.ok=0`, la cabecera lo declara, sale 0.
+- Un feed truncado conserva lo que sí se pudo interpretar: tirar esos
+  artículos perdería noticias que nada volverá a traer.
+- Las dos fuentes caídas **y** nada guardado del día → mensaje claro, sale ≠ 0,
+  **sin llegar a llamar a Gemini**. Con algo guardado, se imprime.
 - Gemini falla 3 veces → error, `summaries` sin fila, y la ejecución siguiente
   reintenta como si nada.
 - Gemini falla la primera y responde la segunda → un resumen, una fila.
@@ -513,7 +592,11 @@ que sí se cubre, porque es barato: la ejecución con `TERM=dumb` y con
       control que existe.
 - [ ] Verificar en un caso real que la misma noticia en los dos medios queda
       agrupada.
-- [ ] Instalar desde cero siguiendo solo el README.
+- [x] Instalar desde cero siguiendo solo el README. Verificado el 2026-08-30 en
+      un entorno aislado: clone, `uv tool install --editable .`, fichero de
+      clave y una ejecución real de 36,4 s sobre una base vacía. El `git clone`
+      por HTTPS no se pudo probar desde ese entorno, que bloquea TLS hacia
+      GitHub; se hizo por SSH.
 - [ ] Mirar el gasto real en la consola de Google tras una semana.
 
 ### Cada test con su tarea
@@ -562,9 +645,17 @@ que sí se cubre, porque es barato: la ejecución con `TERM=dumb` y con
 5. **La clasificación noticia/crónica no es auditable**, la hace el modelo.
    `temperature=0` más el `input_hash` la hacen al menos reproducible: el mismo
    conjunto de artículos da el mismo resultado.
-6. **El desequilibrio de fuentes es estructural.** Faro ~35/día frente a
-   El Pueblo ~3,7/día: el resumen será mayoritariamente Faro y la
-   deduplicación se disparará poco. El Pueblo aporta cobertura, no volumen.
+6. **El repositorio es público, y esa fue la moneda de cambio.** Se hizo
+   público para conseguir el ruleset gratis. Consecuencias asumidas a
+   sabiendas: el código y el historial son visibles desde ya, y los commits
+   locales llevan el email personal del autor, que queda rastreable de forma
+   permanente. Se ofreció reescribirlos a la dirección `noreply` y se decidió
+   no hacerlo.
+7. **El desequilibrio de fuentes es real, pero menor de lo estimado.** Faro
+   publica al menos 35/día frente a los ~11/día de El Pueblo, no los 3,7 que
+   decía la primera medición. El resumen seguirá siendo mayoritariamente Faro,
+   pero la deduplicación entre fuentes se disparará bastante más a menudo de lo
+   que este plan asumía, y conviene mirarla con lupa en T7.
 
 ---
 
@@ -582,9 +673,18 @@ Desarrollo: `pytest` y `pytest-httpserver` para los tests, `ruff` para lint
 y formato con las reglas `S` (bandit) activadas, `uv` para el entorno y el
 empaquetado.
 
-El identificador exacto del modelo Flash se fija explícitamente en
-configuración, no se deja implícito, porque entra en el `input_hash`. La
-versión concreta se comprueba contra la API al escribir el código.
+El identificador del modelo se fija explícitamente porque entra en el
+`input_hash`: un alias como `gemini-flash-latest` cambiaría las respuestas sin
+cambiar el hash que debería seguirlas.
+
+Comprobado contra la API el 2026-08-30: **`gemini-3.6-flash`**. Se descartó
+`gemini-3.7-flash`, que era el más nuevo y devolvía `503 UNAVAILABLE` en todos
+los intentos, y `gemini-2.5-flash`, que aparece en el listado de modelos pero
+responde `404` para `generateContent` con esta clave.
+
+Una llamada real con los 34 artículos del 30 de agosto tardó **29,3 s** y
+devolvió 16 entradas en 6 temas con 13 descartes, sin perder ni inventar
+ningún id. De ahí sale el timeout de 90 s: tres veces el tiempo medido.
 
 ## Antes de escribir código
 
@@ -595,6 +695,7 @@ Comprobado en la máquina el 2026-08-30: Python 3.14.7 en `/usr/bin/python3.14`,
       diseño. Generar otra en https://aistudio.google.com/apikey
 - [ ] La nueva key va en `~/.config/resumen-ceuta/env` con permisos `600`.
       Nunca en el código ni en el repositorio.
-- [ ] `sudo pacman -S uv`.
+- [x] `uv` instalado (0.12.7, vía `mise use -g uv@latest`, 2026-08-30).
 - [x] `git init`, primer commit en `main` y rama `develop` (2026-08-30).
-- [ ] Crear el repositorio remoto en GitHub y empujar ambas ramas.
+- [x] Repositorio privado `adrianhruiz/resumen-ceuta` creado, `main` y
+      `develop` empujadas, `develop` como rama por defecto (2026-08-30).

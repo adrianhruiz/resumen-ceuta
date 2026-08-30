@@ -1,0 +1,45 @@
+[project]
+name = "resumen-ceuta"
+version = "0.1.0"
+description = "Resumen de la prensa local de Ceuta, agrupado por temas, en la terminal"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "feedparser>=6.0.14",
+    "google-genai>=2.20.0",
+    "python-dotenv>=1.2.3",
+]
+
+[project.scripts]
+resumen = "resumen.cli:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "pytest-httpserver>=1.1.5",
+    "ruff>=0.6",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/resumen"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "network: hits real third-party servers; excluded from the CI gate",
+    "perf: asserts a performance budget",
+]
+addopts = "-m 'not network'"
+
+[tool.ruff]
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "S"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101", "S603", "S607"]

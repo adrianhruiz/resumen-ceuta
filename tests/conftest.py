@@ -1,0 +1,184 @@
+"""Fixtures that move the app's fixed paths into a temporary directory."""
+
+import json
+import stat
+from collections.abc import Callable, Iterator
+from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
+from pytest_httpserver import HTTPServer
+
+from resumen import gemini
+from resumen.feeds import SOURCES, Source
+from resumen.store import Article
+
+FIXTURES = Path(__file__).parent / "fixtures" / "feeds"
+RECORDED = ("faro-2026-08-30.xml", "pueblo-2026-08-30.xml")
+
+VALID_KEY = "clave-de-prueba"
+PREVIOUS_MARKER = "RESUMEN QUE YA EXISTE"
+ARTICLES_MARKER = "ARTÍCULOS NUEVOS:"
+
+
+@pytest.fixture(autouse=True)
+def instant_backoff(monkeypatch: pytest.MonkeyPatch) -> None:
+    """No test ever waits out a real retry backoff.
+
+    Only this module's reference to `time` is replaced, so nothing else in the
+    process loses its sleep.
+    """
+    monkeypatch.setattr(gemini, "time", SimpleNamespace(sleep=lambda seconds: None))
+
+
+@pytest.fixture
+def valid_key() -> str:
+    return VALID_KEY
+
+
+@pytest.fixture
+def home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
+    """Redirect the XDG base directories, as a real environment would.
+
+    monkeypatch edits os.environ, so a child process started by a test
+    inherits these too and resolves the same paths.
+    """
+    config, data = tmp_path / "config", tmp_path / "data"
+    config.mkdir()
+    data.mkdir()
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(config))
+    monkeypatch.setenv("XDG_DATA_HOME", str(data))
+    yield tmp_path
+
+
+@pytest.fixture
+def env_file(home: Path) -> Path:
+    """A config directory holding a well-formed, properly protected key file."""
+    path = home / "config" / "resumen-ceuta" / "env"
+    path.parent.mkdir(parents=True)
+    path.write_text(f"GEMINI_API_KEY={VALID_KEY}\n", encoding="utf-8")
+    path.chmod(stat.S_IRUSR | stat.S_IWUSR)
+    return path
+
+
+@pytest.fixture
+def article() -> Callable[..., Article]:
+    """Build an article, overriding only what the test cares about."""
+
+    def build(**overrides: object) -> Article:
+        defaults: dict[str, object] = {
+            "source": "faro",
+            "external_id": "1436869",
+            "guid": "https://elfarodeceuta.es/?p=1436869",
+            "title": "Prisión para los cuatro detenidos por la emboscada",
+            "description": "La jueza decreta prisión provisional.",
+            "body": "Texto plano del cuerpo.",
+            "url": "https://elfarodeceuta.es/prision-cuatro-detenidos/",
+            "pubdate": "2026-08-30T10:27:00+00:00",
+            "day": "2026-08-30",
+        }
+        return Article(**(defaults | overrides))  # type: ignore[arg-type]
+
+    return build
+
+
+@pytest.fixture
+def served_feeds(httpserver: HTTPServer) -> tuple[Source, ...]:
+    """Both feeds, served from a local HTTP server out of the recorded XML."""
+    served = []
+    for source, name in zip(SOURCES, RECORDED, strict=True):
+        path = f"/{source.name}"
+        httpserver.expect_request(path).respond_with_data(
+            (FIXTURES / name).read_bytes(), content_type="application/rss+xml"
+        )
+        served.append(Source(source.name, httpserver.url_for(path), source.id_pattern))
+    return tuple(served)
+
+
+@pytest.fixture
+def served_env(
+    served_feeds: tuple[Source, ...], monkeypatch: pytest.MonkeyPatch
+) -> tuple[Source, ...]:
+    """The same, but through the environment, so a child process finds them.
+
+    Without this a subprocess test would reach the real feeds, which is
+    exactly what the network marker exists to keep out of the gate.
+    """
+    for source in served_feeds:
+        monkeypatch.setenv(f"RESUMEN_{source.name.upper()}_URL", source.url)
+    return served_feeds
+
+
+@pytest.fixture
+def recorded_answer() -> str:
+    """The answer the real model gave on 2026-08-30, replayed."""
+    return (FIXTURES.parent / "gemini" / "summary-2026-08-30.json").read_text(
+        encoding="utf-8"
+    )
+
+
+EMPTY_FEED = b"""<?xml version="1.0"?><rss version="2.0"><channel>
+<title>vacio</title></channel></rss>"""
+
+
+@pytest.fixture
+def empty_env(httpserver: HTTPServer, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Both feeds served empty, through the environment.
+
+    The CLI tests that run a child process are about plumbing: exit codes, the
+    stdout/stderr split, the database being created. Giving them a day with no
+    articles keeps them offline and free of the model, whose behaviour is
+    tested in process elsewhere.
+    """
+    for source in SOURCES:
+        path = f"/vacio-{source.name}"
+        httpserver.expect_request(path).respond_with_data(
+            EMPTY_FEED, content_type="application/rss+xml"
+        )
+        monkeypatch.setenv(
+            f"RESUMEN_{source.name.upper()}_URL", httpserver.url_for(path)
+        )
+
+
+class FakeModel:
+    """A model that answers about whatever it is handed, and counts the asking.
+
+    It behaves like the real one in the way that matters to the cache: when a
+    previous summary comes as context, its ids are carried into the answer, so
+    the reply still accounts for everything it is accountable for.
+    """
+
+    def __init__(self) -> None:
+        self.calls = 0
+        self.prompts: list[str] = []
+
+    def __call__(self) -> FakeModel:
+        """Usable as the model factory the pipeline expects."""
+        return self
+
+    def generate(self, prompt: str) -> str:
+        self.calls += 1
+        self.prompts.append(prompt)
+        sent = [line.split('"')[3] for line in prompt.splitlines() if '"id"' in line]
+        carried: list[str] = []
+        if PREVIOUS_MARKER in prompt:
+            block = prompt.split(PREVIOUS_MARKER)[1].rsplit(ARTICLES_MARKER, 1)[0]
+            previous = json.loads(block[block.index("{") : block.rindex("}") + 1])
+            carried = [
+                i
+                for topic in previous["temas"]
+                for e in topic["entradas"]
+                for i in e["ids"]
+            ]
+            carried += previous["descartados"]
+        kept = {
+            "tema": "Sucesos",
+            "entradas": [{"texto": "algo pasó", "ids": sent[:1]}],
+        }
+        discarded = sorted({*carried, *sent[1:]} - set(sent[:1]))
+        return json.dumps({"temas": [kept], "descartados": discarded})
+
+
+@pytest.fixture
+def fake_model() -> FakeModel:
+    return FakeModel()

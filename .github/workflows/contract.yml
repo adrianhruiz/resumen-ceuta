@@ -1,0 +1,48 @@
+name: Contrato
+
+# The contract tests hit El Faro, El Pueblo and Gemini. They are deliberately
+# outside the gate that protects develop: a pull request must not fail because
+# somebody else's server had a bad night. They run here instead, once a day,
+# and open an issue when reality stops matching what the plan measured.
+on:
+  schedule:
+    - cron: "0 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  contract:
+    name: contrato
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v10.0.1
+        with:
+          enable-cache: true
+
+      - name: Install
+        run: uv sync --locked
+
+      - name: Contract tests
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: uv run pytest -m network
+
+      - name: Report the drift
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          open=$(gh issue list --label contrato --state open --limit 1 --json number --jq '.[0].number')
+          if [ -n "$open" ]; then
+            gh issue comment "$open" --body "Sigue fallando: $RUN_URL"
+          else
+            gh issue create --label contrato \
+              --title "El contrato de los feeds ya no se cumple" \
+              --body "$(printf 'Los tests de contrato han fallado.\n\n%s\n\nQué hacer: volver a grabar los fixtures con `uv run python scripts/record_fixtures.py`, leer el diff y decidir si lo que cambió invalida algo del PLAN.md.' "$RUN_URL")"
+          fi
