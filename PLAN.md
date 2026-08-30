@@ -299,7 +299,7 @@ nada sustancial, porque es la puerta que protege `develop`.
 | Id | Tarea | Criterio de aceptación | Dep. | Rama |
 |---|---|---|---|---|
 | T1 | Andamiaje del proyecto y CLI | `uv tool install --editable .` deja `resumen` en el PATH; sale con 0, `stdout` limpio y el progreso por `stderr` | — | `feature/project-skeleton` |
-| T2 | CI en GitHub Actions | La puerta corre en cada PR y en los push a `main` y `develop`, y su resultado es visible en el PR. Bloquear el merge de un PR rojo **no es posible hoy** (ver más abajo) | T1 | `feature/ci` |
+| T2 | CI en GitHub Actions | La puerta corre en cada PR y en los push a `main` y `develop`; un PR con la suite roja no se puede mergear y el push directo a las dos ramas permanentes se rechaza | T1 | `feature/ci` |
 | T3 | Rutas fijas y carga de la key | Sin `~/.config/resumen-ceuta/env` el arranque muere nombrando el fichero y su contenido; las rutas se redirigen por variable de entorno en los tests | T2 | `feature/config-paths` |
 | T4 | Esquema SQLite y capa de acceso | `CREATE TABLE IF NOT EXISTS` en cada arranque; insertar dos veces el mismo `(source, external_id)` deja una fila; `articles_for_day` filtra por día | T3 | `feature/store` |
 | T5 | Ingesta y parseo de los dos feeds | Contra fixtures: `external_id` correcto por fuente, cuerpo en texto plano sin imágenes, `pubdate` en UTC y `day` cortado en `Europe/Madrid` | T4 | `feature/feed-ingest` |
@@ -389,13 +389,15 @@ Los tests de contrato quedan **fuera** de esa puerta: dependen de servidores
 ajenos y romperían PRs por motivos que no son el PR. Van en un cron nocturno
 que abre issue al fallar.
 
-**La puerta informa, pero no bloquea.** Marcar `gate` como check obligatorio
-exige un ruleset, y GitHub no los ofrece en repositorio privado del plan
-gratuito: la API responde `403 Upgrade to GitHub Pro or make this repository
-public` (verificado el 2026-08-30). Mientras siga así, que un PR rojo no se
-mergee depende de quien mergea, no del servidor. Se resuelve haciendo público
-el repositorio o pagando Pro; hasta entonces, el resultado de CI sí es visible
-en cada PR.
+**La puerta bloquea, no solo informa.** El ruleset `ramas permanentes` cubre
+`refs/heads/main` y `refs/heads/develop` con cuatro reglas: PR obligatorio,
+`gate` como check obligatorio en modo estricto (la rama tiene que estar al día
+con su base), y prohibición de borrado y de push forzado. Sin excepciones para
+nadie, administrador incluido.
+
+Esto es lo que hizo público el repositorio el 2026-08-30: en privado con plan
+gratuito la API responde `403 Upgrade to GitHub Pro or make this repository
+public`, y sin ruleset la regla central de este plan sería solo una promesa.
 
 Cobertura expresada en comportamientos, no en porcentaje. Ningún merge sin test
 que cubra: el corte del día en `Europe/Madrid`, la deduplicación por
@@ -575,11 +577,12 @@ que sí se cubre, porque es barato: la ejecución con `TERM=dumb` y con
 5. **La clasificación noticia/crónica no es auditable**, la hace el modelo.
    `temperature=0` más el `input_hash` la hacen al menos reproducible: el mismo
    conjunto de artículos da el mismo resultado.
-6. **La regla de "nada rojo entra en `develop`" no está respaldada por el
-   servidor.** Sin ruleset, GitHub permite mergear un PR con CI en rojo y
-   permite empujar directamente a `main`. Todo el flujo descansa en disciplina
-   y en que el resultado de CI se vea en el PR. Es el punto donde este plan es
-   más fácil de incumplir sin darse cuenta.
+6. **El repositorio es público, y esa fue la moneda de cambio.** Se hizo
+   público para conseguir el ruleset gratis. Consecuencias asumidas a
+   sabiendas: el código y el historial son visibles desde ya, y los commits
+   locales llevan el email personal del autor, que queda rastreable de forma
+   permanente. Se ofreció reescribirlos a la dirección `noreply` y se decidió
+   no hacerlo.
 7. **El desequilibrio de fuentes es estructural.** Faro ~35/día frente a
    El Pueblo ~3,7/día: el resumen será mayoritariamente Faro y la
    deduplicación se disparará poco. El Pueblo aporta cobertura, no volumen.
