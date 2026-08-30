@@ -1,0 +1,43 @@
+name: CI
+
+# Feature branches are covered by their pull request, so pushes only build the
+# two permanent branches. Anything else would run every commit twice.
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    name: gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v10.0.1
+        with:
+          enable-cache: true
+
+      # --locked fails when uv.lock no longer matches pyproject.toml, so a
+      # dependency added without relocking is caught here and not in production.
+      - name: Install
+        run: uv sync --locked
+
+      - name: Lint
+        run: uv run ruff check .
+
+      - name: Format
+        run: uv run ruff format --check .
+
+      # Contract tests are marked 'network' and excluded by pyproject's addopts:
+      # they depend on third-party servers and would fail pull requests for
+      # reasons that are not the pull request.
+      - name: Tests
+        run: uv run pytest
