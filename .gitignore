@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+build/
+dist/
+*.egg-info/
+
+# Tests and tooling
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Never commit the API key or a local database
+.env
+env
+*.sqlite3
