@@ -336,6 +336,11 @@ año, no merece código.
 
 ## Plan de tareas
 
+**Estado: las 17 tareas están en `develop`, cada una con su PR y la puerta en
+verde (2026-08-30).** Lo que sigue quedó como se planificó salvo dos cambios
+anotados en su sitio: CI se adelantó al segundo puesto, y varias medidas
+sobre los feeds resultaron falsas y están corregidas en los hallazgos.
+
 Cuatro hitos. El hito 0 es un esqueleto que anda: el camino end-to-end más fino
 que se puede ejecutar, sin pasar por Gemini. CI entra la segunda, antes que
 nada sustancial, porque es la puerta que protege `develop`.
