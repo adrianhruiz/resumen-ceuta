@@ -42,16 +42,35 @@ class Source:
     # Pulls the stable numeric id out of the guid. El Pueblo's guid carries the
     # headline as a slug, so the id is the only part of it that survives an edit.
     id_pattern: re.Pattern[str]
+    display: str = ""
+    # True when a single read backfills months, false when the feed is a
+    # sliding window and one read only ever catches what is visible right now.
+    # It is the difference between "complete up to 20:14" and "3 reads so far".
+    archive: bool = False
+
+    def __post_init__(self) -> None:
+        if not self.display:
+            object.__setattr__(self, "display", self.name.capitalize())
 
 
 SOURCES: tuple[Source, ...] = (
-    Source("faro", "https://elfarodeceuta.es/feed/", re.compile(r"[?&]p=(\d+)")),
+    Source(
+        "faro",
+        "https://elfarodeceuta.es/feed/",
+        re.compile(r"[?&]p=(\d+)"),
+        display="Faro",
+        archive=False,
+    ),
     # The digit before the id is a content type: 1 is an article, 3 a photo
     # gallery. Both are ingested. Filtering by it here would be exactly the
     # metadata-based sorting this project decided the model has to do instead,
     # and the numeric id is unique across types, so nothing collides.
     Source(
-        "pueblo", "https://www.elpueblodeceuta.es/rss/", re.compile(r"_\d+_(\d+)\.html")
+        "pueblo",
+        "https://www.elpueblodeceuta.es/rss/",
+        re.compile(r"_\d+_(\d+)\.html"),
+        display="El Pueblo",
+        archive=True,
     ),
 )
 

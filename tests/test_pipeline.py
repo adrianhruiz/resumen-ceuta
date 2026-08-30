@@ -92,12 +92,16 @@ def test_a_run_prints_the_headlines_of_the_day(
     output = run(database, served_feeds, silent, NOON)
     assert output.startswith("Día 30 de agosto · ")
     assert "El PP denuncia" in output
-    # Only that day: the fixtures reach back to February.
-    assert len(output.splitlines()) == 2 + len(articles_for_day(database, "2026-08-30"))
+    # Two header lines, a blank one, then only that day: the fixtures reach
+    # back to February.
+    assert len(output.splitlines()) == 3 + len(articles_for_day(database, "2026-08-30"))
 
 
 def test_a_day_without_news_says_so(database: sqlite3.Connection) -> None:
-    assert run(database, (), silent, NOON) == "Día 30 de agosto · sin noticias"
+    output = run(database, (), silent, NOON)
+    assert output.startswith("Día 30 de agosto · sin noticias")
+    # Nothing was read, and the header says so rather than staying silent.
+    assert "sin leer" in output
 
 
 def test_the_day_is_the_madrid_one() -> None:
@@ -143,7 +147,7 @@ def test_headlines_are_listed_oldest_first() -> None:
             "2026-08-30",
         ),
     ]
-    listed = headlines(sorted(articles, key=lambda a: a.pubdate), "2026-08-30")
+    listed = headlines(sorted(articles, key=lambda a: a.pubdate))
     assert listed.index("Primera") < listed.index("Segunda")
     # Times are shown in Madrid, not UTC.
     assert "08:00 · faro · Primera" in listed

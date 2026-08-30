@@ -2,10 +2,17 @@
 
 import sqlite3
 from collections.abc import Callable, Iterable, Sequence
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 
 from .feeds import MADRID, Source, fetch, parse
-from .store import Article, articles_for_day, insert_articles, record_fetch
+from .render import header, local_time
+from .store import (
+    Article,
+    articles_for_day,
+    fetches_between,
+    insert_articles,
+    record_fetch,
+)
 
 MONTHS = (
     "enero",
@@ -28,14 +35,25 @@ def today(now: datetime | None = None) -> str:
     return (now or datetime.now(UTC)).astimezone(MADRID).date().isoformat()
 
 
+def day_bounds(day: str) -> tuple[str, str]:
+    """The half-open UTC interval covering a Europe/Madrid calendar day.
+
+    Not a fixed 24 hours: the day the clocks change is 23 or 25 hours long,
+    and asking for midnight-to-midnight in local time is what gets that right.
+    """
+    start = datetime.combine(date.fromisoformat(day), datetime.min.time(), MADRID)
+    end = start + timedelta(days=1)
+    # Re-anchor on the local date so a DST jump does not land mid-day.
+    end = datetime.combine(
+        (start + timedelta(days=1)).date(), datetime.min.time(), MADRID
+    )
+    return start.astimezone(UTC).isoformat(), end.astimezone(UTC).isoformat()
+
+
 def spanish_date(day: str) -> str:
     """'2026-08-30' as '30 de agosto', without depending on a system locale."""
     parsed = date.fromisoformat(day)
     return f"{parsed.day} de {MONTHS[parsed.month - 1]}"
-
-
-def local_time(pubdate_utc: str) -> str:
-    return datetime.fromisoformat(pubdate_utc).astimezone(MADRID).strftime("%H:%M")
 
 
 def ingest(
@@ -64,16 +82,12 @@ def ingest(
         progress(f"{source.name}: {len(articles)} items, {stored} nuevos")
 
 
-def headlines(articles: Sequence[Article], day: str) -> str:
+def headlines(articles: Sequence[Article]) -> str:
     """The day as a plain list. The grouped summary arrives with T11."""
-    if not articles:
-        return f"Día {spanish_date(day)} · sin noticias"
-    lines = [f"Día {spanish_date(day)} · {len(articles)} noticias", ""]
-    lines += [
+    return "\n".join(
         f"  {local_time(article.pubdate)} · {article.source} · {article.title}"
         for article in articles
-    ]
-    return "\n".join(lines)
+    )
 
 
 def run(
@@ -85,4 +99,10 @@ def run(
     """Everything a run does, minus the printing."""
     ingest(connection, sources, progress, now)
     day = today(now)
-    return headlines(articles_for_day(connection, day), day)
+    articles = articles_for_day(connection, day)
+    start, end = day_bounds(day)
+    top = header(
+        spanish_date(day), len(articles), fetches_between(connection, start, end)
+    )
+    body = headlines(articles)
+    return f"{top}\n\n{body}" if body else top
