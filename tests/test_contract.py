@@ -15,7 +15,7 @@ import pytest
 
 from resumen.config import ConfigError, load_api_key
 from resumen.feeds import SOURCES, fetch, parse
-from resumen.gemini import MODEL, TOPICS, Gemini, ask
+from resumen.gemini import MODEL, TOPICS, Gemini, TransportError, ask
 from resumen.store import Article
 
 FARO, PUEBLO = SOURCES
@@ -155,3 +155,26 @@ def test_an_adversarial_headline_cannot_derail_the_answer() -> None:
     payload = ask(Gemini(api_key(), MODEL), articles)
     returned = {i for t in payload["temas"] for e in t["entradas"] for i in e["ids"]}
     assert returned | set(payload["descartados"]) == {"faro:1", "pueblo:2"}
+
+
+def test_a_rejected_key_never_appears_in_the_error() -> None:
+    # The error text is printed to stderr and, in CI, to a public log. GitHub
+    # masks registered secrets, but the app must not rely on that.
+    invented = "AIzaSyFAKE-clave-inventada-para-la-prueba-000"
+    articles = [
+        Article(
+            "faro",
+            "1",
+            "g",
+            "Titular",
+            "Entradilla",
+            None,
+            "u",
+            "2026-08-30T10:00:00+00:00",
+            "2026-08-30",
+        )
+    ]
+    with pytest.raises(TransportError) as raised:
+        ask(Gemini(invented, MODEL), articles, sleep=lambda seconds: None)
+    assert invented not in str(raised.value)
+    assert "AIza" not in str(raised.value)
