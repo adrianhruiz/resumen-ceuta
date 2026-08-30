@@ -249,6 +249,10 @@ resumen            # hoy, y ayer también si hoy va flojo
 resumen --force    # regenera ignorando la caché
 ```
 
+Añadir una dependencia obliga a reinstalar la herramienta
+(`uv tool install --editable . --reinstall`): el modo editable refleja el
+código, no el conjunto de dependencias.
+
 No hay argumento de fecha ni subcomando `init`: el esquema se crea con
 `CREATE TABLE IF NOT EXISTS` en cada arranque. La primera ejecución crea la BD,
 trae los 36 días de El Pueblo y las 6,5 h de Faro, y ya sirve.

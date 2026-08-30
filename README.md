@@ -43,5 +43,12 @@ resumen --force    # regenera ignorando la caché
 ```bash
 uv run pytest             # la suite completa
 uv run pytest -m network  # contrato contra los feeds y Gemini reales
-ruff check . && ruff format --check .
+uv run ruff check . && uv run ruff format --check .
+```
+
+La instalación editable refleja los cambios de código, pero **no** los de
+dependencias. Al añadir una, hay que reinstalar la herramienta:
+
+```bash
+uv tool install --editable . --reinstall
 ```
