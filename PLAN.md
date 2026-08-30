@@ -597,4 +597,5 @@ Comprobado en la máquina el 2026-08-30: Python 3.14.7 en `/usr/bin/python3.14`,
       Nunca en el código ni en el repositorio.
 - [ ] `sudo pacman -S uv`.
 - [x] `git init`, primer commit en `main` y rama `develop` (2026-08-30).
-- [ ] Crear el repositorio remoto en GitHub y empujar ambas ramas.
+- [x] Repositorio privado `adrianhruiz/resumen-ceuta` creado, `main` y
+      `develop` empujadas, `develop` como rama por defecto (2026-08-30).
