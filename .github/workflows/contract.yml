@@ -28,6 +28,8 @@ jobs:
         run: uv sync --locked
 
       - name: Contract tests
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: uv run pytest -m network
 
       - name: Report the drift
