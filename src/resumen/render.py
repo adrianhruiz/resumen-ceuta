@@ -27,7 +27,9 @@ CONTROL = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]")
 
 MIN_WIDTH = 40
 MAX_WIDTH = 100
-INDENT = "  "
+BULLET = "  - "
+# Wrapped text lines up under the first word of its bullet, not under the dash.
+INDENT = " " * len(BULLET)
 
 
 def local_time(instant_utc: str) -> str:
@@ -48,27 +50,33 @@ def terminal_width() -> int:
 
 
 def render(summary: Summary, width: int | None = None) -> str:
-    """The body of the summary: one paragraph per topic, in a fixed order."""
+    """The body of the summary: one bullet list per topic, in a fixed order."""
     wrap_at = width if width is not None else terminal_width()
     by_name = {topic.name: topic for topic in summary.topics}
 
-    paragraphs = []
+    blocks = []
     # TOPICS order, not the model's: the reader gets the same shape every day.
     for name in TOPICS:
         topic = by_name.get(name)
         if topic is None or not topic.entries:
             continue
-        facts = "; ".join(sanitize(entry.text) for entry in topic.entries)
-        paragraphs.append(
+        lines = [f"{name}:"]
+        # One fact per line: the eye finds the next item without reading the
+        # previous one to its end, which a run-on paragraph does not allow.
+        lines += [
             textwrap.fill(
-                f"{name}: {facts}",
+                sanitize(entry.text),
                 width=wrap_at,
+                initial_indent=BULLET,
                 subsequent_indent=INDENT,
                 break_long_words=False,
                 break_on_hyphens=False,
             )
-        )
-    return "\n".join(paragraphs)
+            for entry in topic.entries
+        ]
+        blocks.append("\n".join(lines))
+    # A blank line between topics; without it the headings drown in the bullets.
+    return "\n\n".join(blocks)
 
 
 def coverage(fetches: Sequence[Fetch]) -> str:

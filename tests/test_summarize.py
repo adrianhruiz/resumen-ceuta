@@ -76,7 +76,7 @@ def test_a_whole_run_prints_header_and_summary(
     lines = output.splitlines()
     assert lines[0].startswith("Día 30 de agosto · 34 noticias")
     assert lines[1].startswith("El Pueblo: completo hasta")
-    assert "Frontera: algo pasó" in output
+    assert "Frontera:\n  - algo pasó" in output
 
 
 def test_exactly_one_call_per_run(
